@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+.env
+
+# Build
+build/
+dist/
+
+# Editor / local
+.claude/settings.local.json
+# Windows "copy" artifacts (NTFS alternate data streams)
+*Zone.Identifier
