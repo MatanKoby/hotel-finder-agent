@@ -33,14 +33,41 @@ The one free source that natively returns all three data points in one vendor:
 
 ### LiteAPI to domain mapping (M1)
 
-- `rating` (0-10 guest score) maps straight to `Hotel.rating` (kept 0-10, booking.com style);
-  `stars` (1-5) to `Hotel.star_rating`; `hotelDescription` to `Hotel.description`; coordinates and
-  address as given; `facilityIds` mapped onto the `Amenity` vocabulary (`domain-model.md`).
-- Prices: from `POST hotels/rates`, per hotel take the **cheapest refundable** and the **cheapest
-  non-refundable** rate (or only the kind set by `filters.refundable`), each becoming a `RateOffer`
-  (see `contract.md`). Board and refundable flag carry through.
-- Lodging types: all types by default (hotels, hostels, guesthouses, apartments);
-  `filters.property_types` narrows.
+Exact field mapping, verified against recorded fixtures in `tests/fixtures/liteapi/` (a real
+Barcelona `data/hotels` + `hotels/rates` capture, and the slimmed `data/facilities` id→name
+dictionary). The builder maps from those.
+
+**`data/hotels` item → `Hotel`:**
+
+| LiteAPI field | `Hotel` field | Note |
+|---|---|---|
+| `id` | `id` | provider-local id (`source="liteapi"`) |
+| `name` | `name` | |
+| `hotelDescription` | `description` | HTML; strip tags |
+| `latitude` / `longitude` | `location` (`GeoPoint`) | |
+| `address` | `address` | |
+| `city` | `area` | no neighborhood field; city as coarse area |
+| `stars` (1-5) | `star_rating` | hotel class |
+| `rating` (0-10) | `rating` | guest score, kept 0-10 |
+| `reviewCount` | `review_count` | |
+| `facilityIds` (int[]) | `amenities` | id → English via `data_facilities.json`, then `normalize_amenity` (`domain-model.md`); unknown ids drop |
+| `currency` | `currency` | |
+| `main_photo`, `thumbnail`, `hotelTypeId`, `chain`, `zip` | `raw` | kept in `raw`; `hotelTypeId` drives `property_types` filtering |
+
+**`hotels/rates` → `RateOffer`** (per hotel, from `data[].roomTypes[].rates[]`):
+
+| LiteAPI field | `RateOffer` field | Note |
+|---|---|---|
+| `retailRate.total[0].amount` / `.currency` | `total` / `currency` | stay total |
+| (derived) | `per_night` | `total / nights` |
+| `boardName` (e.g. "Room Only") | `board` | |
+| `cancellationPolicies.refundableTag` | `refundable` | `"RFN"` → true, `"NRFN"` → false |
+| (derived vs `filters.price_max`) | `over_budget` | see Budget and offers in `contract.md` |
+
+Per hotel keep the **cheapest refundable** and **cheapest non-refundable** rate (or only the kind
+`filters.refundable` sets). `retailRate.suggestedSellingPrice` (benchmarked vs booking.com) and
+`rateId`/`offerId` are ignored in M1 (booking deferred). Lodging types: all `hotelTypeId`s by
+default; `filters.property_types` narrows.
 
 ## Evaluated candidates (2026-07-10 research)
 
