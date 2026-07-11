@@ -29,54 +29,16 @@ imported; no mock data in the live path; no crashes** (data problems become `war
 never exceptions). A minimal `examples/orchestrator_sim.py` proves the import → `search()` →
 envelope path locally. **There is no interactive CLI** (verification is via the example + tests).
 
-M1 is the set of batches **M1a–M1e** below. The v1 vertical slice (mock provider, pipeline,
-scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). Post-M1 batches
-(testing, evaluation, quality) follow.
+**Milestone 1 (batches M1a–M1e) is COMPLETE** — see `specflow/history/BUILD_QUEUE_DONE.md` and
+`CLAIMS.md` → Completed. hotel-finder is submodule-ready: import → `HotelSearchRequest` →
+`search()` → `HotelSearchResponse` with real LiteAPI hotels/prices across three lenses, Nebius LLM
+scoring with heuristic fallback, free-text geocoding, no mandatory `.env`, no crashes. The remaining
+batches below are **post-M1** (evaluation and quality).
 
-> **Pick-order pointer for "continue".** "Continue working towards the first milestone" means:
-> claim and build the remaining M1 batches in order. **M1a (the foundation) is done** (see
-> `specflow/history/BUILD_QUEUE_DONE.md`); next are **M1b/M1c/M1d** (parallelizable, all depend
-> only on M1a), then **M1e** (integration surface + example, integrates last). Claim each via
-> `specflow/procedures/claim-batch.md`, record it in `CLAIMS.md`, and run `make check` as the gate.
-> Only if the instruction is genuinely ambiguous, ask which batch.
-
----
-
-## Batch M1e — Integration surface + minimal orchestrator example
-
-**Milestone 1. This is what makes M1 "submodule-ready."** Integrates M1a–M1d into an importable,
-callable library with a runnable example. Ready.
-
-**Depends on:** M1a (the API); consumes M1b/M1c/M1d for real data + scoring.
-
-**Goal.** Make hotel-finder cleanly importable and usable as a git submodule, and prove it with a
-**minimal** example that drives `search()` exactly as the orchestrator will. This is a usage proof,
-**not** an evaluation harness (systematic eval is post-M1).
-
-### Deliverables
-- **Import surface:** finalize top-level exports (`search`, `search_sync`, `HotelSearchRequest`,
-  `HotelSearchResponse`, sub-models, `Settings`); ship `py.typed`; `pip install -e .` works and
-  `from hotel_finder import search` succeeds in a fresh env.
-- **No mandatory `.env`:** `Settings` has safe defaults; config comes from the caller's environment
-  or an injected `Settings`. Importing the package touches no network and needs no keys.
-- **`examples/orchestrator_sim.py`:** builds a `HotelSearchRequest` via the exported model, calls
-  `search()` (and shows `search_sync()`), and pretty-prints the `HotelSearchResponse` (status,
-  warnings, lenses, offers). Live LiteAPI + Nebius when keyed; heuristic + warnings without.
-- **Integration docs:** a short "use as a submodule" section in `README.md` (how the orchestrator
-  adds the submodule and calls `search`); update `dev-guide.md`; `make run` runs the example;
-  remove the obsolete `src/hotel_finder/demo.py`.
-
-### Files this batch creates/edits
-- `examples/orchestrator_sim.py` (new), `src/hotel_finder/__init__.py` (finalize exports),
-  `pyproject.toml` (packaging, if needed), `README.md`, `Makefile` (`run` target), delete
-  `src/hotel_finder/demo.py`, `tests/` (import/export smoke test; stubbed-provider sim run).
-
-### Does NOT touch
-- Provider internals, scoring math, the contract shape.
-
-### Verification
-- `make check` green; in a fresh venv `pip install -e .` then `from hotel_finder import search,
-  HotelSearchRequest` works; `make run` prints a `HotelSearchResponse` envelope.
+> **Pick-order pointer for "continue".** M1 is done. The next work is the post-M1 batches below,
+> starting with **P1** (evaluation harness, the headline post-M1 item), then **P2** (quality).
+> P3/P4/P5 are open-scope and need a `spec-edit` first. Claim via
+> `specflow/procedures/claim-batch.md`, record in `CLAIMS.md`, `make check` as the gate.
 
 ---
 

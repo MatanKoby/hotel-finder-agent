@@ -10,6 +10,14 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch M1e — Integration surface + minimal orchestrator example (Milestone 1 complete)
+Shipped `examples/orchestrator_sim.py` (builds a `HotelSearchRequest`, calls `search()`/`search_sync()`,
+pretty-prints the envelope), finalized the top-level exports (+ `py.typed`), removed `demo.py` and its
+console-script, pointed `make run` at the example, and fixed `ENABLED_PROVIDERS` env parsing (plain
+comma-separated string via `NoDecode`). Rewrote `README.md` for submodule usage. Key commit `b1d06d4`.
+`make check` green, 65 tests; fresh `pip install -e .` exposes the API; `make run` prints the envelope
+offline and live over LiteAPI. **This completes Milestone 1 (M1a–M1e): hotel-finder is submodule-ready.**
+
 ## Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
 Shipped two LLM transports behind a `_ChatBackend` seam in `scoring/llm.py`: OpenAI-compatible
 (existing) and a new `scoring/nebius_endpoint.py` thin Ollama-REST client (model auto-discovered via

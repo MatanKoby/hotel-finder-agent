@@ -19,11 +19,39 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch M1e — Integration surface + minimal orchestrator example
 - Owner: claude
 - Started: 2026-07-11 15:02
+- Finished: 2026-07-11 15:44
+- Commit: b1d06d4
 
-## Completed
+**What shipped — Milestone 1 is submodule-ready.** `examples/orchestrator_sim.py` stands in for the
+orchestrator: it builds a `HotelSearchRequest` from the exported models, calls `search()` (shows
+`search_sync()`), and pretty-prints the `HotelSearchResponse` (status, warnings, resolved query,
+lenses, priced offers). Finalized the top-level import surface (`search`/`search_sync` + request/
+response + all sub-models + `Settings`; `py.typed` already shipped), removed the obsolete
+`demo.py` and its console-script entry, and pointed `make run` at the example. Fixed env-based
+provider selection: `ENABLED_PROVIDERS` now accepts a plain comma-separated string (via `NoDecode`
++ a validator), not only JSON — `ENABLED_PROVIDERS=mock` / `mock,liteapi` now work. Rewrote
+`README.md` around submodule usage (add-submodule + `pip install -e` + `await search(...)`, the
+validator/envelope contract, data/scoring config, layout).
+
+**Verification.** `make check` green (ruff + mypy strict on 31 source files); pytest 65 passed
+(+5 in `tests/test_integration.py`: exports present, no keys/`.env` required to import + run mock,
+offline mock search, the example's `run()` offline, and `ENABLED_PROVIDERS` env parsing). A fresh
+`python -m venv` + `pip install -e .` exposes `from hotel_finder import search, HotelSearchRequest`.
+`make run` prints the envelope offline (mock + heuristic) **and** live end-to-end over LiteAPI
+(50 real Barcelona hotels → filtered → shortlisted → scored → three lenses with real
+refundable/non-refundable offers).
+
+**Milestone 1 complete (M1a–M1e).** The submodule: import → build `HotelSearchRequest` → `search()`
+→ `HotelSearchResponse` with real LiteAPI hotels/prices across three lenses, Nebius LLM scoring with
+heuristic fallback (both offline-verified), free-text geocoding, no mandatory `.env`, no crashes.
+Deferred to post-M1: live LLM verification (needs a key/endpoint), `filters.property_types`
+enforcement, evaluation harness (P1), quality tuning (P2), ANCHOR intent (P3), more sources (P4),
+web-search backup (P5). `dev` branch is local-only and **unpushed** — run `git push -u origin dev`.
 
 ### Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
 - Owner: claude
