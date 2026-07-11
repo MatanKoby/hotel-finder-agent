@@ -19,11 +19,38 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
 - Owner: claude
 - Started: 2026-07-11 14:54
+- Finished: 2026-07-11 15:02
+- Commit: c843b6d
 
-## Completed
+**What shipped.** `LLMScorer` now has two transports behind a small `_ChatBackend` seam:
+**Backend A** (OpenAI-compatible, the `openai` SDK against `llm_base_url` + `llm_api_key` +
+`llm_model` — Nebius Token Factory / Groq / etc.) and **Backend B** (`scoring/nebius_endpoint.py`, a
+thin Ollama-REST client: `GET /api/tags` liveness + single-model auto-discovery, `POST /api/chat`,
+bearer `nebius_endpoint_token`, no API key, brief cold-start retry). The backend is chosen by
+`llm_backend`/env (`auto` → endpoint if `NEBIUS_ENDPOINT_URL` set, else openai if `LLM_API_KEY`
+set, else none). Both share the prompt, the `{"scores":[...]}` parse, and the one repair retry, and
+both fall back to the heuristic on any failure. Added `scoring/base.py:ScoreReport` (effective
+`scorer` + `warnings`) and `HotelScorer.report`; the heuristic reports `heuristic`, the LLM scorer
+reports `llm` on success or `heuristic` + a warning on fallback. The pipeline now sets
+`meta.scorer` from the scorer that **actually ran** and surfaces the fallback warning. Config gained
+`llm_backend` + `nebius_endpoint_url`/`_token`/`_model`.
+
+**Verification.** `make check` green (ruff + mypy strict on 32 source files); pytest 60 passed
+(+7: `test_llm_scorer.py` valid/invalid/omitted/no-backend/repair-retry with an injected backend;
+`test_nebius_endpoint.py` `/api/tags` auto-discovery + `/api/chat` via `httpx.MockTransport`,
+no-models error, backend selection auto/forced, and a scorer run over the endpoint backend; plus a
+pipeline test that `scorer=llm` with no creds reports `meta.scorer=heuristic` + a warning).
+
+**Deferred / notes.** No **live** LLM verification: neither a Token Factory key nor a Nebius
+endpoint is configured in `.env` (the offline stubbed paths cover both transports). Scoring
+weightings are unchanged (P2). Next and last for M1: **M1e** (integration surface, no-mandatory-
+`.env`, `py.typed`, `examples/orchestrator_sim.py`, remove `demo.py`, README). `dev` remains
+local-only, unpushed.
 
 ### Batch M1c — Place resolution (structured passthrough + text geocoding)
 - Owner: claude

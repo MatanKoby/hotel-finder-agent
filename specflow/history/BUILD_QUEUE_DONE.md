@@ -10,6 +10,15 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
+Shipped two LLM transports behind a `_ChatBackend` seam in `scoring/llm.py`: OpenAI-compatible
+(existing) and a new `scoring/nebius_endpoint.py` thin Ollama-REST client (model auto-discovered via
+`/api/tags`, `/api/chat`, bearer, no key, cold-start retry); selected by `llm_backend`/env. Added
+`ScoreReport` in `scoring/base.py` so `meta.scorer` reflects the scorer that actually ran and a
+fallback surfaces as a warning. Config got `llm_backend` + `nebius_endpoint_*`. Key commit
+`c843b6d`. `make check` green, 60 tests (both backends stubbed offline). Deferred: live LLM
+verification (no key/endpoint configured); scoring weightings unchanged (P2).
+
 ## Batch M1c — Place resolution (structured passthrough + text geocoding)
 Shipped `utils/geocode.py` (a `Geocoder` protocol + keyless OSM `NominatimGeocoder` + `GeoResult` +
 `make_geocoder`). The pipeline's `_resolve` is now async: a text-only `Place` is geocoded into

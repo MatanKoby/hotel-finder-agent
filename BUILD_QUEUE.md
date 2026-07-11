@@ -42,41 +42,6 @@ scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). P
 
 ---
 
-## Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
-
-**Milestone 1.** Makes "scored by the Nebius LLM, heuristic fallback" real for **both run modes**. Ready.
-
-**Depends on:** M1a (envelope `warnings` / `meta`).
-
-**Goal.** Give `LLMScorer` two backends behind the `HotelScorer` interface (`spec/scoring.md`,
-`spec/config.md`), both contacted by this repo, and make fallback observable.
-
-### Deliverables
-- **Backend A (OpenAI-compatible):** the `openai` SDK against `llm_base_url` + `llm_api_key` +
-  `llm_model` (eval/testing → Nebius Token Factory). Existing path, kept.
-- **Backend B (serverless endpoint):** a thin Ollama-REST client (`POST {url}/api/chat`, bearer
-  `nebius_endpoint_token`), the single served model auto-discovered via `GET {url}/api/tags`,
-  liveness probe + brief cold-start retry (orchestrator → shared Nebius endpoint, no API key).
-- Backend selected by `llm_backend` / presence of env vars; both parse into the same
-  `{"scores":[...]}` shape with one repair retry.
-- On any fallback (no LLM configured, unreachable, error, omitted ids), `meta.scorer` reads
-  `heuristic` and a `warning` records it; a successful LLM run reads `llm`.
-
-### Files this batch creates/edits
-- `src/hotel_finder/scoring/llm.py` (two backends), maybe `scoring/nebius_endpoint.py` (the thin
-  endpoint client), `scoring/base.py` (effective scorer), `src/hotel_finder/pipeline.py`
-  (`meta.scorer` + fallback warning), `config.py` (endpoint vars, additive), `.env.example`,
-  `tests/` (stubbed clients for both backends; forced fallback reports `heuristic` + a warning).
-
-### Does NOT touch
-- Scoring math / weightings, provider adapters.
-
-### Verification
-- `make check` green with stubbed LLM clients; forced fallback reports `scorer=heuristic` + a
-  warning; each backend parses a stubbed success into scores.
-
----
-
 ## Batch M1e — Integration surface + minimal orchestrator example
 
 **Milestone 1. This is what makes M1 "submodule-ready."** Integrates M1a–M1d into an importable,
