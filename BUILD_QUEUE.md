@@ -19,25 +19,29 @@ Completed history: [`specflow/history/BUILD_QUEUE_DONE.md`](specflow/history/BUI
 
 ## Milestone 1 — Definition of Done
 
-With a **LiteAPI key** and a **Nebius key** in `.env`, a user runs the **interactive CLI**, types
-a location, and gets **real** hotels and accommodations nearby (real names, descriptions,
-coordinates, and **prices** from LiteAPI), organized across the **three lenses**, **scored by the
-Nebius LLM** (heuristic fallback on failure). Everything flows through the submodule **`search()`
-API** (`HotelSearchRequest` → `HotelSearchResponse` envelope, see `spec/contract.md`). **No mock
-data in the live path, no crashes:** data problems become `warnings` + `status`, never exceptions.
+M1 delivers hotel-finder as an importable **git submodule** the orchestrator can integrate as its
+**first example**. With a **LiteAPI key** and **Nebius LLM access** configured (env, or a `Settings`
+injected by the caller), the orchestrator builds a `HotelSearchRequest`, calls **`search()`** (or
+the sync `search_sync()`), and gets a `HotelSearchResponse` with **real** hotels and accommodations
+nearby (real names, descriptions, coordinates, and **prices** from LiteAPI), across the **three
+lenses**, **scored by the Nebius LLM** (heuristic fallback on failure). **No `.env` is required when
+imported; no mock data in the live path; no crashes** (data problems become `warnings` + `status`,
+never exceptions). A minimal `examples/orchestrator_sim.py` proves the import → `search()` →
+envelope path locally. **There is no interactive CLI** (verification is via the example + tests).
 
 M1 is the set of batches **M1a–M1e** below. The v1 vertical slice (mock provider, pipeline,
-scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). Post-M1 batches follow.
+scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). Post-M1 batches
+(testing, evaluation, quality) follow.
 
 > **Pick-order pointer for "continue".** After a context clear, **ask** which un-done batch to
 > claim rather than guessing. **M1a is the foundation** (the contract everything else builds on);
-> M1b/M1c/M1e can follow it in parallel; **M1d integrates them last**.
+> M1b/M1c/M1d follow it in parallel; **M1e (integration surface + example) integrates last**.
 
 ---
 
-## Batch M1a — Contract refactor to the submodule search API
+## Batch M1a — Contract + the submodule search API
 
-**Milestone 1. Foundation** for every other M1 batch. Decision is settled → **ready**.
+**Milestone 1. Foundation** for every other M1 batch. Ready.
 
 **Depends on:** none.
 
@@ -47,22 +51,25 @@ out, exported so an orchestrator can validate input on its own side before calli
 
 ### Deliverables
 - Request models: `Place` (structured `country_code`+`city` / `center`+`radius_km`, plus a
-  `text` geocode fallback and `desired_area`), `Occupancy`, `Stay` (optional), `Filters`,
-  `HotelSearchRequest`. Validators for price and date ranges; `extra="forbid"`.
-- Response models: `RateOffer` (total/currency/per_night/board/refundable, no booking token),
-  `ResolvedQuery`, `Pick` (adds `offer`), `HotelSearchResponse` (`status` ok/empty/degraded +
-  `warnings`, never raises for a data outcome).
-- `async def search(request, settings=None) -> HotelSearchResponse` entry point; re-export
-  `search`, `HotelSearchRequest`, `HotelSearchResponse` (and sub-models) from
-  `hotel_finder/__init__.py`.
+  `text` geocode fallback and `desired_area`), `Occupancy`, `Stay` (optional), `Filters`
+  (incl. `refundable: bool | None`), `HotelSearchRequest`. Validators for price and date ranges;
+  `extra="forbid"`.
+- Response models: `RateOffer` (total/currency/per_night/board/refundable/over_budget, no booking
+  token), `ResolvedQuery`, `Pick` (adds `offers: list[RateOffer]`), `HotelSearchResponse`
+  (`status` ok/empty/degraded + `warnings`, never raises for a data outcome). The budget-and-offers
+  rule from `spec/contract.md`.
+- Entry points: `async def search(request, settings=None) -> HotelSearchResponse` and a thin sync
+  `search_sync(request, settings=None)`. `settings=None` reads env; a caller may inject `Settings`.
+  Re-export `search`, `search_sync`, `HotelSearchRequest`, `HotelSearchResponse` (and sub-models)
+  from `hotel_finder/__init__.py`.
 - Pipeline produces the envelope (populates `status`, `warnings`, `resolved`) instead of raising
   on empty/degraded outcomes.
 
 ### Files this batch creates/edits
 - `src/hotel_finder/contracts.py` (rewrite), `src/hotel_finder/__init__.py` (exports),
-  `src/hotel_finder/pipeline.py` (build envelope; map `Place`/`Stay`), `stages/explain.py`
-  (`Pick.offer`), `demo.py` (new names, minimal), `tests/` (validation raises at construction;
-  envelope status/warnings; content-only when `stay` omitted).
+  `src/hotel_finder/pipeline.py` (build envelope; map `Place`/`Stay`; `search_sync`),
+  `stages/explain.py` (`offers`), `tests/` (validation raises at construction; envelope
+  status/warnings; content-only when `stay` omitted).
 
 ### Does NOT touch
 - Scoring math; the LiteAPI provider (M1b); the geocoding impl (M1c) — the `text` fallback can be
@@ -70,7 +77,8 @@ out, exported so an orchestrator can validate input on its own side before calli
 
 ### Verification
 - `make check` green; a `HotelSearchRequest` built from a mapping validates and a malformed one
-  raises `ValidationError` at construction; `search()` returns a `HotelSearchResponse` envelope.
+  raises `ValidationError` at construction; `search()`/`search_sync()` return a
+  `HotelSearchResponse` envelope.
 
 ---
 
@@ -89,8 +97,10 @@ source (`spec/providers.md`, `spec/dev-guide.md` → Add a data source).
   `center`+`radius`) for content, then `POST hotels/rates` with the returned `hotelIds` for
   prices (only when `stay` is present). Sends `X-API-Key` from `LITEAPI_API_KEY`.
 - `providers/liteapi/adapter.py`: normalize LiteAPI payloads to `Hotel` (name, coords, address,
-  description, stars, guest `rating`, `review_count`, amenities via `normalize_amenities`) and
-  the priced rate to a `RateOffer` (total/currency/per_night/board/refundable).
+  description, `stars`→`star_rating`, guest `rating` kept **0-10**, `review_count`, `facilityIds`
+  mapped onto `Amenity`), and per hotel the **cheapest refundable + cheapest non-refundable** rate
+  to `RateOffer`(s) (total/currency/per_night/board/refundable/over_budget). All lodging types by
+  default; `filters.property_types` narrows.
 - Registered in `providers/registry.py`; runs when `liteapi` is in `enabled_providers`; upstream
   errors are caught and surfaced as `warnings`, never fatal.
 - Offline test from a **recorded** LiteAPI payload (no network in CI); secrets via `.env` only.
@@ -100,7 +110,7 @@ source (`spec/providers.md`, `spec/dev-guide.md` → Add a data source).
   (`LITEAPI_API_KEY`, base URL — additive), `.env.example`, `tests/` (recorded-payload fixture).
 
 ### Does NOT touch
-- The mock provider, pipeline stages, scoring math, the CLI.
+- The mock provider, pipeline stages, scoring math.
 
 ### Verification
 - `make check` green with `liteapi` disabled by default; an integration test drives the adapter
@@ -115,9 +125,9 @@ source (`spec/providers.md`, `spec/dev-guide.md` → Add a data source).
 **Depends on:** M1a (defines `Place`). Pairs with M1b.
 
 **Goal.** Resolve `Place`: use `country_code`+`city` or `center` directly when given; when only
-`text` is given, geocode it (free Nominatim, or LiteAPI's place lookup) into `country_code`+`city`
-and/or a `center` GeoPoint. Record what was resolved in `ResolvedQuery`. Graceful, non-fatal
-fallback when geocoding fails (warn, proceed with what is known).
+`text` is given, geocode it (LiteAPI's place lookup first, else free Nominatim) into
+`country_code`+`city` and/or a `center` GeoPoint. Record what was resolved in `ResolvedQuery`.
+Graceful, non-fatal fallback when geocoding fails (warn, proceed with what is known).
 
 ### Deliverables
 - A geocoder helper behind an interface (offline test double), free backend, rate-limit aware
@@ -130,7 +140,7 @@ fallback when geocoding fails (warn, proceed with what is known).
   `config.py` (geocoder endpoint — additive), `tests/` (offline geocoder double).
 
 ### Does NOT touch
-- Scoring math, provider adapters, the CLI.
+- Scoring math, provider adapters.
 
 ### Verification
 - `make check` green; a request with only `place.text` resolves to a `center`/city in a test
@@ -138,104 +148,116 @@ fallback when geocoding fails (warn, proceed with what is known).
 
 ---
 
-## Batch M1d — Interactive CLI (the visible end-to-end demo)
+## Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
 
-**Milestone 1. Integrates M1a–M1c** into the runnable experience the DoD describes. Ready.
-
-**Depends on:** M1a, M1b, M1c.
-
-**Goal.** An interactive CLI: prompt for a location (and optionally dates/guests), build a
-`HotelSearchRequest`, call `search()` against **live LiteAPI** with the **Nebius** scorer, and
-print real results across the three lenses, including prices. Reads keys from `.env`
-(`spec/config.md`, `spec/dev-guide.md`).
-
-### Deliverables
-- Interactive prompt loop (location required; dates/guests optional → content-only vs priced).
-- Renders the three lenses with name, area, price (`RateOffer`), guest rating, and rationale;
-  prints `status` + any `warnings` plainly.
-- A non-interactive flag path (e.g. `--location`) is retained for scripted runs/tests.
-
-### Files this batch creates/edits
-- `src/hotel_finder/demo.py` (or a new `cli.py`), `tests/` (drive the CLI with a stubbed
-  `search`/provider; assert lenses + warnings render).
-
-### Does NOT touch
-- Contract models, provider internals, scoring math.
-
-### Verification
-- `make check` green; with keys set, `python -m hotel_finder ...` (or the CLI entry) returns real
-  LiteAPI hotels with prices across three lenses; missing/invalid keys degrade gracefully with a
-  warning, not a crash.
-
----
-
-## Batch M1e — Nebius LLM scoring end to end + effective-scorer reporting
-
-**Milestone 1.** Makes "scored by the Nebius LLM, heuristic fallback" real and observable. Ready.
+**Milestone 1.** Makes "scored by the Nebius LLM, heuristic fallback" real for **both run modes**. Ready.
 
 **Depends on:** M1a (envelope `warnings` / `meta`).
 
-**Goal.** Verify the existing `LLMScorer` reaches **Nebius Token Factory** via env with no code
-change (`spec/scoring.md`, `spec/config.md`), and make fallback observable: `meta.scorer` reports
-the scorer that **actually ran**, and a fallback adds a `warning`. (Folds the former "meta.scorer
-effective" polish into M1.)
+**Goal.** Give `LLMScorer` two backends behind the `HotelScorer` interface (`spec/scoring.md`,
+`spec/config.md`), both contacted by this repo, and make fallback observable.
 
 ### Deliverables
-- On LLM fallback (no key / error / omitted ids), `meta.scorer` reads `heuristic` and a `warning`
-  records the fallback; the happy LLM path reads `llm`; heuristic-configured runs read `heuristic`.
-- A short doc/verification note that Nebius env values (`LLM_BASE_URL`, `LLM_API_KEY`,
-  `LLM_MODEL`, `SCORER=llm`) drive real scoring end to end.
+- **Backend A (OpenAI-compatible):** the `openai` SDK against `llm_base_url` + `llm_api_key` +
+  `llm_model` (eval/testing → Nebius Token Factory). Existing path, kept.
+- **Backend B (serverless endpoint):** a thin Ollama-REST client (`POST {url}/api/chat`, bearer
+  `nebius_endpoint_token`), the single served model auto-discovered via `GET {url}/api/tags`,
+  liveness probe + brief cold-start retry (orchestrator → shared Nebius endpoint, no API key).
+- Backend selected by `llm_backend` / presence of env vars; both parse into the same
+  `{"scores":[...]}` shape with one repair retry.
+- On any fallback (no LLM configured, unreachable, error, omitted ids), `meta.scorer` reads
+  `heuristic` and a `warning` records it; a successful LLM run reads `llm`.
 
 ### Files this batch creates/edits
-- `src/hotel_finder/scoring/base.py` and/or `scoring/llm.py` (surface the effective scorer),
-  `src/hotel_finder/pipeline.py` (set `meta.scorer` + fallback warning), `tests/` (forced
-  fallback reports `heuristic` + emits a warning).
+- `src/hotel_finder/scoring/llm.py` (two backends), maybe `scoring/nebius_endpoint.py` (the thin
+  endpoint client), `scoring/base.py` (effective scorer), `src/hotel_finder/pipeline.py`
+  (`meta.scorer` + fallback warning), `config.py` (endpoint vars, additive), `.env.example`,
+  `tests/` (stubbed clients for both backends; forced fallback reports `heuristic` + a warning).
 
 ### Does NOT touch
-- Scoring math / weightings, provider adapters, the CLI.
+- Scoring math / weightings, provider adapters.
 
 ### Verification
-- `make check` green; a forced-fallback request reports `scorer=heuristic` with a warning; a
-  configured LLM run reports `llm`.
+- `make check` green with stubbed LLM clients; forced fallback reports `scorer=heuristic` + a
+  warning; each backend parses a stubbed success into scores.
 
 ---
 
-## Post-M1 batches
+## Batch M1e — Integration surface + minimal orchestrator example
 
-These are out of scope for Milestone 1 and unblock after it lands.
+**Milestone 1. This is what makes M1 "submodule-ready."** Integrates M1a–M1d into an importable,
+callable library with a runnable example. Ready.
 
-### Batch P1 — Lens-aware rationales in `explain.py`
+**Depends on:** M1a (the API); consumes M1b/M1c/M1d for real data + scoring.
 
-**Depends on:** M1a. **Goal.** Per-lens phrasing so a hotel under `hidden_gems` reads differently
-from the same data under `stratified_best` (`spec/pipeline.md` → Explain/Lenses), deterministic
-(no LLM). Edits `stages/explain.py` (+ `pipeline.py` if it needs the lens), `tests/` for distinct
-phrasings. Does not touch scoring or the `Pick` shape.
+**Goal.** Make hotel-finder cleanly importable and usable as a git submodule, and prove it with a
+**minimal** example that drives `search()` exactly as the orchestrator will. This is a usage proof,
+**not** an evaluation harness (systematic eval is post-M1).
 
-### Batch P2 — `ANCHOR` intent (peers of a named hotel)
+### Deliverables
+- **Import surface:** finalize top-level exports (`search`, `search_sync`, `HotelSearchRequest`,
+  `HotelSearchResponse`, sub-models, `Settings`); ship `py.typed`; `pip install -e .` works and
+  `from hotel_finder import search` succeeds in a fresh env.
+- **No mandatory `.env`:** `Settings` has safe defaults; config comes from the caller's environment
+  or an injected `Settings`. Importing the package touches no network and needs no keys.
+- **`examples/orchestrator_sim.py`:** builds a `HotelSearchRequest` via the exported model, calls
+  `search()` (and shows `search_sync()`), and pretty-prints the `HotelSearchResponse` (status,
+  warnings, lenses, offers). Live LiteAPI + Nebius when keyed; heuristic + warnings without.
+- **Integration docs:** a short "use as a submodule" section in `README.md` (how the orchestrator
+  adds the submodule and calls `search`); update `dev-guide.md`; `make run` runs the example;
+  remove the obsolete `src/hotel_finder/demo.py`.
 
-**Depends on:** M1b (a source that can resolve a named hotel; LiteAPI can). **Open scope** →
-resolve with the user via `spec-edit` before claiming. **Goal.** Implement the reserved `anchor`
+### Files this batch creates/edits
+- `examples/orchestrator_sim.py` (new), `src/hotel_finder/__init__.py` (finalize exports),
+  `pyproject.toml` (packaging, if needed), `README.md`, `Makefile` (`run` target), delete
+  `src/hotel_finder/demo.py`, `tests/` (import/export smoke test; stubbed-provider sim run).
+
+### Does NOT touch
+- Provider internals, scoring math, the contract shape.
+
+### Verification
+- `make check` green; in a fresh venv `pip install -e .` then `from hotel_finder import search,
+  HotelSearchRequest` works; `make run` prints a `HotelSearchResponse` envelope.
+
+---
+
+## Post-M1 batches (testing, evaluation, quality)
+
+Out of scope for M1; unblock after it lands. M1 ships the capability; these make it work *well*.
+
+### Batch P1 — Evaluation harness and test scenarios
+
+**Depends on:** M1e. **Goal.** Start testing it actually works properly: representative scenarios
+(cities, budgets, `refundable` variants, over-budget fallback, content-only) driven through
+`search()` via the orchestrator wrapper, with quality assertions/metrics (lenses populated, prices
+present, dedupe sane, `status`/`warnings` correct). Establishes the baseline for improving results.
+Lands under `tests/eval/` (or `examples/eval/`).
+
+### Batch P2 — Result-quality improvements
+
+**Depends on:** P1 (a baseline to measure against). **Goal.** Improve results: lens-aware
+rationales in `stages/explain.py` (a hotel under `hidden_gems` reads differently from
+`stratified_best`), and tune the reasonable-but-untuned defaults from `spec/roadmap.md` → Open
+considerations (heuristic weightings `spec/scoring.md`, price-band cutoffs `spec/config.md`,
+gentler filter widening `spec/pipeline.md`).
+
+### Batch P3 — `ANCHOR` intent (peers of a named hotel)
+
+**Depends on:** M1b. **Open scope** → `spec-edit` first. **Goal.** Implement the reserved `anchor`
 intent: resolve `anchor_hotel` to a band/area/rating envelope, then find peers within it
 (`spec/contract.md` → `Intent`, `spec/roadmap.md`). Edits `pipeline.py` (intent branch), maybe
 `stages/anchor.py`, `tests/`. `zone` behavior unchanged.
 
-### Batch P3 — Additional data sources / multi-source blend
+### Batch P4 — Additional data sources / multi-source blend
 
 **Depends on:** M1b. **Open scope** → `spec-edit` first. **Goal.** Add further sources from
 `spec/data-sources.md` → Future direction: an OSM breadth/fallback layer, an independent price
 cross-check (Amadeus test / Xotelo `/rates`), or OpenTripMap/LLM descriptions. Each is a provider
 folder per `spec/providers.md`; cross-source dedupe stays in the pipeline.
 
-### Batch P4 — LLM web-search backup source
+### Batch P5 — LLM web-search backup source
 
 **Depends on:** M1b. **Open scope** → `spec-edit` first. **Goal.** The deferred backup from
-`spec/roadmap.md` (M1 Approved → web search is secondary): a separate search tool/API feeding the
-pipeline when real providers return thin results. Chat completions do not browse, so this needs a
-search API (see `spec/data-sources.md`).
-
-### Batch P5 — Tuning and widening polish
-
-**Depends on:** none. **Goal.** Revisit the reasonable-but-untuned defaults flagged in
-`spec/roadmap.md` → Open considerations: heuristic weightings/thresholds (`spec/scoring.md`),
-price-band cutoffs (`spec/config.md`), and gentler filter widening (`spec/pipeline.md`, which
-today drops price bounds entirely).
+`spec/roadmap.md` (M1 → web search is secondary): a separate search tool/API feeding the pipeline
+when real providers return thin results. Chat completions do not browse, so this needs a search API
+(see `spec/data-sources.md`).
