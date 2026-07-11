@@ -33,9 +33,11 @@ M1 is the set of batches **M1a–M1e** below. The v1 vertical slice (mock provid
 scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). Post-M1 batches
 (testing, evaluation, quality) follow.
 
-> **Pick-order pointer for "continue".** After a context clear, **ask** which un-done batch to
-> claim rather than guessing. **M1a is the foundation** (the contract everything else builds on);
-> M1b/M1c/M1d follow it in parallel; **M1e (integration surface + example) integrates last**.
+> **Pick-order pointer for "continue".** "Continue working towards the first milestone" means:
+> claim and build the M1 batches in order, starting with **M1a** (the foundation, no deps), then
+> M1b/M1c/M1d (parallelizable), then **M1e** (integration surface + example, integrates last).
+> Claim each via `specflow/procedures/claim-batch.md`, record it in `CLAIMS.md`, and run
+> `make check` as the gate. Only if the instruction is genuinely ambiguous, ask which batch.
 
 ---
 
@@ -98,16 +100,21 @@ source (`spec/providers.md`, `spec/dev-guide.md` → Add a data source).
   prices (only when `stay` is present). Sends `X-API-Key` from `LITEAPI_API_KEY`.
 - `providers/liteapi/adapter.py`: normalize LiteAPI payloads to `Hotel` (name, coords, address,
   description, `stars`→`star_rating`, guest `rating` kept **0-10**, `review_count`, `facilityIds`
-  mapped onto `Amenity`), and per hotel the **cheapest refundable + cheapest non-refundable** rate
-  to `RateOffer`(s) (total/currency/per_night/board/refundable/over_budget). All lodging types by
-  default; `filters.property_types` narrows.
+  mapped onto `Amenity` via the committed `data_facilities.json` id→name dict then
+  `normalize_amenity`), and per hotel the **cheapest refundable + cheapest non-refundable** rate
+  to `RateOffer`(s) (total/currency/per_night/board/refundable/over_budget). **Exact field mapping
+  is in `spec/data-sources.md` → LiteAPI to domain mapping.** All lodging types by default;
+  `filters.property_types` narrows.
 - Registered in `providers/registry.py`; runs when `liteapi` is in `enabled_providers`; upstream
   errors are caught and surfaced as `warnings`, never fatal.
-- Offline test from a **recorded** LiteAPI payload (no network in CI); secrets via `.env` only.
+- Offline test from the **recorded fixtures** in `tests/fixtures/liteapi/` (already captured:
+  `data_hotels_barcelona.json`, `hotels_rates_barcelona.json`, `data_facilities.json`); no network
+  in CI; secrets via `.env` only.
 
 ### Files this batch creates/edits
 - `src/hotel_finder/providers/liteapi/` (new), `providers/registry.py`, `config.py`
-  (`LITEAPI_API_KEY`, base URL — additive), `.env.example`, `tests/` (recorded-payload fixture).
+  (`LITEAPI_API_KEY`, base URL — additive), `.env.example`, `tests/` (uses
+  `tests/fixtures/liteapi/*.json`, already recorded).
 
 ### Does NOT touch
 - The mock provider, pipeline stages, scoring math.
