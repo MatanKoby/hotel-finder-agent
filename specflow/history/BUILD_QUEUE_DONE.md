@@ -10,6 +10,14 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch M1c — Place resolution (structured passthrough + text geocoding)
+Shipped `utils/geocode.py` (a `Geocoder` protocol + keyless OSM `NominatimGeocoder` + `GeoResult` +
+`make_geocoder`). The pipeline's `_resolve` is now async: a text-only `Place` is geocoded into
+center+city+country_code, filling `ResolvedQuery` and an effective request the providers discover
+against; structured places skip it; failures warn and proceed. Config got the Nominatim knobs. Key
+commit `8aa7f36`. `make check` green, 53 tests; verified live (Nominatim: Barcelona, Tokyo). Deferred:
+LiteAPI place-lookup backend (Nominatim-only for now, behind the interface).
+
 ## Batch M1b — LiteAPI provider (real hotels, content, and prices)
 Shipped `providers/liteapi/` (`api.py` httpx client for `data/hotels` + `hotels/rates`, `adapter.py`
 mapping to `Hotel` + cheapest refundable/non-refundable offers per `spec/data-sources.md`,

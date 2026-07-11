@@ -42,36 +42,6 @@ scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). P
 
 ---
 
-## Batch M1c — Place resolution (structured passthrough + text geocoding)
-
-**Milestone 1.** Turns `Place` into what LiteAPI and distance ranking need. Ready.
-
-**Depends on:** M1a (defines `Place`). Pairs with M1b.
-
-**Goal.** Resolve `Place`: use `country_code`+`city` or `center` directly when given; when only
-`text` is given, geocode it (LiteAPI's place lookup first, else free Nominatim) into
-`country_code`+`city` and/or a `center` GeoPoint. Record what was resolved in `ResolvedQuery`.
-Graceful, non-fatal fallback when geocoding fails (warn, proceed with what is known).
-
-### Deliverables
-- A geocoder helper behind an interface (offline test double), free backend, rate-limit aware
-  (`User-Agent` header for Nominatim, see `spec/data-sources.md`).
-- Pipeline resolves `Place` before provider dispatch and fills `resolved` on the response; a
-  geocode failure adds a `warning` and does not crash.
-
-### Files this batch creates/edits
-- `src/hotel_finder/utils/geocode.py` (new), `src/hotel_finder/pipeline.py` (resolve step),
-  `config.py` (geocoder endpoint — additive), `tests/` (offline geocoder double).
-
-### Does NOT touch
-- Scoring math, provider adapters.
-
-### Verification
-- `make check` green; a request with only `place.text` resolves to a `center`/city in a test
-  using the double, and a forced geocode failure yields a warning, not an exception.
-
----
-
 ## Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
 
 **Milestone 1.** Makes "scored by the Nebius LLM, heuristic fallback" real for **both run modes**. Ready.

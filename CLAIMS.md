@@ -19,11 +19,32 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch M1c — Place resolution (structured passthrough + text geocoding)
 - Owner: claude
 - Started: 2026-07-11 14:43
+- Finished: 2026-07-11 14:54
+- Commit: 8aa7f36
 
-## Completed
+**What shipped.** `utils/geocode.py`: a `Geocoder` protocol with a free, keyless
+`NominatimGeocoder` backend (OpenStreetMap, sends the required `User-Agent`), a `GeoResult`
+(`lat`/`lon`/`city`/`country_code`), and `make_geocoder(settings)`. The pipeline's resolve step is
+now async: a `Place` that gives only `text` is geocoded into `center` + `city` + `country_code`;
+`_resolve` returns the `ResolvedQuery` **and an effective request** whose `place` carries the
+resolved fields, so the LiteAPI provider discovers against them. Structured places pass straight
+through and never build a geocoder. A geocode failure or no-match adds a `warning` and proceeds
+(never crashes). Config gained `nominatim_base_url` / `geocoder_user_agent` / `geocoder_timeout`.
+
+**Verification.** `make check` green (ruff + mypy strict on 31 source files); pytest 53 passed
+(+6 in `tests/test_geocode.py`: Nominatim JSON parsing via `httpx.MockTransport`, empty-result →
+None, pipeline geocode-success/failure/no-match, and structured-place-skips-geocoding). Verified
+**live** against Nominatim (Sagrada Familia → Barcelona/ES; Shibuya → Tokyo/JP).
+
+**Deferred / notes.** Backend is Nominatim only; `spec/data-sources.md` mentions trying LiteAPI's
+place lookup first — left as a future swap behind the `Geocoder` interface (Nominatim is free and
+needs no key, so it works without a LiteAPI key). Next: M1d (Nebius scoring, two transports) then
+M1e (integration surface + example). `dev` remains local-only, unpushed.
 
 <!-- Recent finishes, newest first. Older entries archived to specflow/history/CLAIMS_DONE.md. -->
 
