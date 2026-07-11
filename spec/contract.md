@@ -1,9 +1,15 @@
 # Request / response contract (`contracts.py`)
 
-The stable typed surface this repo exposes **as a git submodule** to an orchestrator agent:
-`HotelSearchRequest` in, `HotelSearchResponse` out, via one entry point. Built on the domain
-types in `domain-model.md`. The agent is stateless (see `architecture.md`), so this contract is
-the entire interface.
+The stable typed surface this repo exposes **as a git submodule** to an orchestrator agent
+("tripper"): `HotelSearchRequest` in, `HotelSearchResponse` out, via one entry point. Built on the
+domain types in `domain-model.md`. The agent is stateless (see `architecture.md`), so this contract
+is the entire interface.
+
+The response here is the **agent payload**. The orchestrator wraps it in its own **transport
+envelope** (`{status: ok|error, error, hotel: <payload>}`) — that wrapper is orchestrator-owned and
+not implemented in this repo. Our `agent_status` is the *data* outcome; the orchestrator's outer
+`status` is the *transport* outcome (call/import/timeout). `empty` and `degraded` both map to
+transport `status = ok`.
 
 ## The submodule API surface
 
@@ -28,7 +34,7 @@ the entire interface.
   is an orchestrator bug and surfaces on the orchestrator's side, before any work.
 - **Warn, never drop, never crash (during work):** a provider being down, some hotels having no
   price, dates in the past, zero matches, the LLM scorer falling back to heuristic. These do not
-  raise. They populate `HotelSearchResponse.warnings` and set `status`, returning whatever
+  raise. They populate `HotelSearchResponse.warnings` and set `agent_status`, returning whatever
   results were obtained. The orchestrator sifts, retries, or asks the user.
 
 ## `HotelSearchRequest` (the request)
@@ -38,11 +44,16 @@ the entire interface.
 - `request_id: str` (auto uuid; the orchestrator may supply its own correlation id)
 - `place: Place` (required, see below)
 - `stay: Stay | None = None` (omit for content-only, no live prices)
-- `intent: Intent = ZONE`
-- `anchor_hotel: str | None = None` (for `anchor` intent, reserved; see `roadmap.md`)
+- `guests: Occupancy = Occupancy()` — **trip-level** occupancy (see below)
+- `guest_nationality: str = "US"` — **trip-level** traveler attribute; affects rates upstream
 - `filters: Filters = Filters()`
 - `lenses: list[LensName] | None = None` (None means all three)
 - `picks_per_lens: int = 3` (ge=1)
+
+`intent` / `anchor_hotel` are **not part of the M1 wire contract.** They still exist on the model
+with inert defaults (`intent = zone`, `anchor_hotel = None`), so the wire shape is stable whether or
+not the orchestrator sets them; the orchestrator simply doesn't. They get **re-documented as a pair**
+when the `anchor` intent is specced (see `roadmap.md`, Batch P3 in `BUILD_QUEUE.md`).
 
 ### `Place` (where to search) — accepts structured **and** free text
 
@@ -57,12 +68,25 @@ is required.
   absent.
 - `desired_area: str | None` — neighborhood bias for ranking, not a hard filter.
 
-### `Stay` (dates + occupancy, needed for real prices)
+Validator: at least one of `city`, `center`, or `text` must be present.
+
+### `Occupancy` (who is travelling) — trip-level
+
+`Occupancy = {adults: int = 2 (ge=1), children_ages: list[int] = []}`. This is the orchestrator's
+`Room` shape. It is **trip-level** (`request.guests`), shared context the flights and activities
+agents want too, not nested under `stay`. Per-room control is the `stay.rooms` override below.
+
+### `Stay` (dates + occupancy source, needed for real prices)
 
 - `check_in: date`, `check_out: date`
-- `rooms: list[Occupancy] = [Occupancy()]`, where `Occupancy = {adults: int = 2,
-  children_ages: list[int] = []}`
-- `guest_nationality: str = "US"` (affects rates upstream), `currency: str = "EUR"`
+- `currency: str = "EUR"`
+- `rooms: list[Occupancy] | None = None` — **`None` derives a single room from `request.guests`.**
+  When set, `rooms` **overrides** `guests` (multi-room bookings). `guests` is used *only* when
+  `rooms` is `None`.
+
+`guest_nationality` is **not** on `Stay` — it is trip-level (`request.guest_nationality`), because
+it is a traveler attribute shared with the sibling agents. The pipeline threads it onto the rate
+call.
 
 ### `Filters`
 
@@ -76,44 +100,68 @@ is required.
 
 Validators enforce `price_min <= price_max` and `check_in < check_out`.
 
-## `Intent`
-
-`StrEnum`: `zone` (broad area search, fully handled) and `anchor` (peers of a named hotel,
-**reserved**, not yet implemented; see `roadmap.md`).
-
 ## `LensName`
 
 `StrEnum`: `stratified_best`, `overall_standouts`, `hidden_gems`. The three projections of the
 scored set (see `pipeline.md` → Lenses).
 
-## `HotelSearchResponse` (the response)
+## `HotelSearchResponse` (the agent payload)
 
 A **result envelope**, so partial results and problems are data the orchestrator reads, not
-exceptions it must catch.
+exceptions it must catch. The orchestrator wraps this in its transport envelope (top of this file).
 
 - `request_id: str` — echoes the request
-- `status: Literal["ok", "empty", "degraded"]` — `ok` = results, no issue; `degraded` = results
-  returned but something went wrong (see `warnings`); `empty` = valid query, nothing matched
+- `agent_status: Literal["ok", "empty", "degraded"]` — the **data** outcome: `ok` = results, no
+  issue; `degraded` = results returned but something went wrong (see `warnings`); `empty` = valid
+  query, nothing matched. (Renamed from `status`; the orchestrator owns the outer transport
+  `status`.)
 - `warnings: list[str]` — human-readable notes about anything that degraded a result
 - `resolved: ResolvedQuery` — what was **actually** searched, for orchestrator reasoning
 - `lenses: dict[LensName, list[Pick]]`
-- `meta: RecommendationMeta`
+- `diagnostics: Diagnostics` (renamed from `meta`)
 
 ### `ResolvedQuery`
 
-`center: GeoPoint | None`, `city: str | None`, `check_in / check_out: date | None`,
-`currency: str | None`. Lets the orchestrator see which place/coords/dates the search ran with
-(e.g. what `text` geocoded to) and decide whether to re-ask.
+`city: str | None`, `area: str | None`, `center: GeoPoint | None`, `check_in / check_out: date |
+None`, `currency: str | None`. Lets the orchestrator see which place/coords/dates the search ran
+with (e.g. what `text` geocoded to) and decide whether to re-ask.
 
-### `Pick`
+### `Pick` — flat, rendering-ready
 
-- `hotel: Hotel` — carries location, description, amenities, coordinates (see `domain-model.md`)
-- `score: float`, `subscores: dict[str, float]`, `rationale: str`
+One recommended hotel within a lens. **Flat** (no nested `hotel`): the fields the orchestrator needs
+to render and reason are promoted to the top level, and internal-only fields (`raw`, full `sources`)
+are not on the wire.
+
+- `name: str`
+- `score: float` (**0..1, normalized, comparable across lenses** — see below)
+- `rationale: str` — human-readable "why this hotel"
+- `why: dict[str, float]` — structured subscores; **free-form** (keys are scorer-dependent, so a
+  fixed set would lie). Today: `value`, `location`, `character`, `gem_signal` (see `scoring.md`).
+- `area: str | None`
+- `distance_to_desired_km: float | None` — proximity to `desired_area` / `center`; **`None`** when
+  neither was given
+- `price_per_night: float | None`, `currency: str | None`
+- `rating: float | None` (guest score, 0-10), `review_count: int | None`, `star_rating: int | None`
+  (1-5)
+- `description: str | None` — the "character" blurb
+- `amenities: set[Amenity]`
+- `coordinates: GeoPoint | None`
+- `image_url: str | None` — provider-supplied photo (see `domain-model.md` → `Hotel.image_url`);
+  **`None`** for providers/hotels without one (mock especially)
+- `url: str | None`
 - `offers: list[RateOffer]` — the priced results for this hotel (see Budget and offers below): up
   to two (cheapest refundable + cheapest non-refundable) when `filters.refundable` is unset, one
   when it is set. Empty when `stay` was omitted or no price was found.
 
+**`score` is normalized to 0..1 and comparable across lenses.** It is the single overall score from
+`scoring.md` (`clamp(0.5*value + 0.3*location + 0.2*character)`), already in `[0, 1]`. Every lens
+surfaces that *same* overall score — the lenses differ in **selection** (which hotels), not in the
+scale — so `stratified_best` must **not** re-normalize within a price tier, or cross-lens
+comparability breaks.
+
 ### `RateOffer` (price info, read-only)
+
+The orchestrator's `Offer` shape.
 
 - `total: float`, `currency: str`, `per_night: float | None`
 - `board: str | None` (e.g. `"Room Only"`, `"Breakfast Included"`)
@@ -136,22 +184,25 @@ hotels wholesale:
   the kind set by `filters.refundable`).
 - **Budget-too-low fallback:** when too few (or no) hotels fit budget, rather than return empty the
   agent surfaces the cheapest available options (capped at `picks_per_lens`), each `RateOffer`
-  flagged `over_budget = True`, sets `status = "degraded"`, and adds a `warning` such as
+  flagged `over_budget = True`, sets `agent_status = "degraded"`, and adds a `warning` such as
   `"no hotels within EUR X; cheapest is EUR Y"`. The orchestrator sees the price floor, learns the
   budget is too low, and can relax it and re-query, without being spammed.
 
-### `RecommendationMeta`
+### `Diagnostics`
 
 `providers_used`, `candidates_found`, `candidates_after_filter`, `shortlisted`, `scorer`,
-`widened`.
+`widened`. (Renamed from `RecommendationMeta` / the `meta` field.)
 
 Note: `scorer` reports the scorer that **actually ran**. If the LLM scorer falls back to heuristic
 (no credentials, endpoint unreachable, bad output), `scorer` reads `heuristic` and a `warning`
-records the fallback (see `scoring.md`, Batch M1e in `BUILD_QUEUE.md`).
+records the fallback (see `scoring.md`, Batch M1e in `specflow/history/BUILD_QUEUE_DONE.md`).
 
 ## Status vs the current code
 
-`contracts.py` still carries the **v1 names** (`HotelQuery`, `Recommendations`, flat `location` /
-`guests`). The design above (rename to `HotelSearchRequest` / `HotelSearchResponse`, `Place` /
-`Stay` / `Filters`, the envelope, `RateOffer`) is the M1 target; the code refactor to match is a
-batch in `BUILD_QUEUE.md`.
+M1 shipped the **nested** shape: `contracts.py` currently carries `Pick.hotel: Hotel` (nested),
+`status`, `meta` (`RecommendationMeta`), `Pick.subscores`, occupancy under `Stay.rooms`,
+`guest_nationality` on `Stay`, and an unbounded `Pick.score`. The design above (flat `Pick`, trip-
+level `guests` + `guest_nationality`, `agent_status`, `diagnostics`, `Pick.why`, `0..1` `score`, the
+new `image_url` / `distance_to_desired_km` fields) is the **post-M1 target** negotiated with the
+orchestrator. The refactor is **Batch C1** (contract reshape) and **Batch C2** (provider-backed
+`image_url` + computed `distance_to_desired_km`) in `BUILD_QUEUE.md`.

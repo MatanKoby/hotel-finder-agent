@@ -17,7 +17,7 @@ LLM: the sequence is fixed and known up front, which is what keeps the agent eva
    `price_per_night` via `Settings.price_band_for()` (cutoffs in `config.md`).
 5. **Hard filter + bounded-agency widening** (`stages/filtering.py` + `_filter_with_widening`) —
    build `FilterCriteria` from the query; if survivors are `< min_candidates`, relax soft
-   constraints with a **capped retry**. Sets `meta.widened`. Detail below.
+   constraints with a **capped retry**. Sets `diagnostics.widened`. Detail below.
 6. **Shortlist** (`stages/shortlist.py`) — cheap deterministic pre-rank, keep top
    `shortlist_size`.
 7. **Score once** (`scoring/`) — `make_scorer(settings).score(shortlist, query)`. The single
@@ -46,7 +46,7 @@ preserves evaluability. Caps and radius come from `config.md`.
 
 **Budget fallback.** When it is the price-bound relaxation that brought candidates back (nothing
 fit `price_max`), those hotels are the budget-too-low fallback from `contract.md` → Budget and
-offers: their offers are flagged `over_budget = True`, `status` becomes `degraded`, and a
+offers: their offers are flagged `over_budget = True`, `agent_status` becomes `degraded`, and a
 `warning` records the price floor. Within budget, over-budget hotels are not returned at all.
 
 ## Shortlist (`stages/shortlist.py`)
@@ -68,7 +68,11 @@ Pure functions over `list[ScoredHotel]` (`LensName` members in `contract.md`):
 
 ## Explain (`stages/explain.py`)
 
-`to_pick` copies score/subscores/rationale, sets `coordinates = hotel.location`, and attaches the
-hotel's `offers` (cheapest refundable + cheapest non-refundable, per `contract.md` → Budget and
-offers), producing the `Pick` objects that fill `HotelSearchResponse.lenses`. The pipeline also
-sets `status`, `warnings`, `resolved`, and `meta` on the response.
+`to_pick` builds the **flat** `Pick` (see `contract.md` → Pick): it carries `score` and `rationale`,
+maps the scorer's `subscores → why`, **surfaces** `name` / `area` / `price_per_night` / `currency` /
+`rating` / `review_count` / `star_rating` / `description` / `amenities` / `url` / `image_url` up from
+the hotel, sets `coordinates = hotel.location`, computes `distance_to_desired_km` (`haversine` to
+`resolved.center` / the desired-area point via `utils/geo.py`, else `None`), and attaches the hotel's
+`offers` (cheapest refundable + cheapest non-refundable, per `contract.md` → Budget and offers). The
+pipeline also sets `agent_status`, `warnings`, `resolved` (incl. `area`), and `diagnostics` on the
+response.

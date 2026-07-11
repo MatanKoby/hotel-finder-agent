@@ -15,7 +15,9 @@ or a price:
 - `rating` (guest review score, **0 to 10**, booking.com style), `review_count`,
   `star_rating` (hotel class, 1 to 5)
 - `amenities: set[Amenity]`
-- `url`, `description` (free text the LLM reads for "character")
+- `url`, `image_url` (provider-supplied photo, e.g. LiteAPI `main_photo` / `thumbnail`; `None`
+  when the provider has none, mock especially), `description` (free text the LLM reads for
+  "character")
 - `raw: dict` (original payload), `sources: list[str]` (provenance; grows on dedupe)
 
 A model validator guarantees `source` is always present in `sources`.
