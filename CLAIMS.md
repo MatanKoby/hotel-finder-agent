@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch M1b — LiteAPI provider (real hotels, content, and prices)
+- Owner: claude
+- Started: 2026-07-11 14:31
+
 ## Completed
 
 <!-- Recent finishes, newest first. Older entries archived to specflow/history/CLAIMS_DONE.md. -->
