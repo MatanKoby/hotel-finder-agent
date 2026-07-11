@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch M1e — Integration surface + minimal orchestrator example
+- Owner: claude
+- Started: 2026-07-11 15:02
+
 ## Completed
 
 ### Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
