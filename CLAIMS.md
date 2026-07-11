@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch M1a — Contract + the submodule search API
+- Owner: claude
+- Started: 2026-07-11 11:15
+
 ## Completed
 
 <!-- Recent finishes, newest first. Older entries archived to specflow/history/CLAIMS_DONE.md. -->
