@@ -31,6 +31,17 @@ The one free source that natively returns all three data points in one vendor:
   Voraport 3-star at 251.61 EUR for 3 nights / 2 adults, up to Olivia Plaza at 743.58 EUR). This
   clears the M1 bar (location + description + price, free, one vendor).
 
+### LiteAPI to domain mapping (M1)
+
+- `rating` (0-10 guest score) maps straight to `Hotel.rating` (kept 0-10, booking.com style);
+  `stars` (1-5) to `Hotel.star_rating`; `hotelDescription` to `Hotel.description`; coordinates and
+  address as given; `facilityIds` mapped onto the `Amenity` vocabulary (`domain-model.md`).
+- Prices: from `POST hotels/rates`, per hotel take the **cheapest refundable** and the **cheapest
+  non-refundable** rate (or only the kind set by `filters.refundable`), each becoming a `RateOffer`
+  (see `contract.md`). Board and refundable flag carry through.
+- Lodging types: all types by default (hotels, hostels, guesthouses, apartments);
+  `filters.property_types` narrows.
+
 ## Evaluated candidates (2026-07-10 research)
 
 Legend: y = yes, ~ = partial/thin, n = no.

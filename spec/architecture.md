@@ -9,8 +9,8 @@ linked below.
 **Intelligence in the steps, orchestration in plain code.** The pipeline is deterministic; the
 only place that wants judgment (fuzzy scoring) is isolated behind an interface.
 
-The agent is **stateless / idempotent**: a self-contained `HotelQuery` in, a `Recommendations`
-out, no memory between calls (see `contract.md`). This deliberately dissolves the "one big
+The agent is **stateless / idempotent**: a self-contained `HotelSearchRequest` in, a
+`HotelSearchResponse` out, no memory between calls (see `contract.md`). This deliberately dissolves the "one big
 orchestrator call vs many small calls" question: the agent behaves identically either way, so
 that decision can be deferred to whoever builds the orchestrator.
 
@@ -23,7 +23,7 @@ that decision can be deferred to whoever builds the orchestrator.
 | **One LLM step, behind an interface** | Only the fuzzy scoring step wants judgment. Isolating it behind `HotelScorer` keeps the rest deterministic and testable and makes the LLM optional and swappable. See `scoring.md`. |
 | **Mock/fixture provider first** | Lets the whole pipeline (including scoring) build, run, and be evaluated offline and at $0, before integrating any real or paid source. |
 | **Heuristic scorer is the default; LLM is opt-in** | The user cannot afford a paid model API. The heuristic scorer is free, deterministic, and good enough to make everything runnable and evaluable. The LLM scorer is enabled only when a (free) key is configured. |
-| **LLM scorer is provider-agnostic (Groq by default)** | Uses the OpenAI-compatible API. No Anthropic/paid dependency. Default endpoint is Groq's free tier; switching to xAI Grok / OpenRouter is an env change, not a code change. Always falls back to the heuristic on any error. |
+| **LLM scorer is provider-agnostic, Nebius for this project** | Behind the `HotelScorer` interface. Two Nebius run modes (Token Factory API key for eval; a shared serverless endpoint for the orchestrator), and any OpenAI-compatible endpoint. No Anthropic/paid dependency. Always falls back to the heuristic on any error. See `scoring.md`. |
 | **Per-provider folder layout** | User preference: each provider folder owns exactly two concerns, `api.py` (fetch raw) plus `adapter.py` (normalize to our types). Cross-provider concerns (dedupe) live in the pipeline. Filesystem readable at a glance; helpers go in `utils/`. |
 | **Pydantic v2 everywhere** | Validation, clean JSON for LLM I/O, and a stable typed contract that the future orchestrator and adapters hang off. |
 
@@ -31,12 +31,11 @@ that decision can be deferred to whoever builds the orchestrator.
 
 ```
 src/hotel_finder/
-  __init__.py        # re-exports recommend() — the agent's single public entry point
+  __init__.py        # re-exports search() — the agent's single public entry point
   models.py          # canonical domain types: Hotel, GeoPoint, PriceBand, Amenity (+ normalization)
-  contracts.py       # request/response: HotelQuery, Recommendations, Pick, RecommendationMeta, Intent, LensName
+  contracts.py       # request/response: HotelSearchRequest, HotelSearchResponse, Place, Stay, Filters, RateOffer, Pick, Intent, LensName
   config.py          # Settings (pydantic-settings; env + .env); price-band cutoffs; pipeline thresholds
-  pipeline.py        # recommend() — the deterministic orchestrator
-  demo.py            # argparse CLI: python -m hotel_finder.demo
+  pipeline.py        # search() / search_sync() — the deterministic orchestrator
 
   utils/             # cross-cutting helpers (no domain meaning)
     geo.py           #   haversine(GeoPoint, GeoPoint) -> km   (the ONLY distance math)
@@ -61,9 +60,10 @@ src/hotel_finder/
     __init__.py      #   make_scorer(settings) -> HotelScorer
     base.py          #   HotelScorer protocol, ScoredHotel, overall_score() (the score weighting)
     heuristic.py     #   HeuristicScorer — free, deterministic default
-    llm.py           #   LLMScorer — OpenAI-compatible (Groq default), Pydantic-validated, heuristic fallback
+    llm.py           #   LLMScorer — OpenAI-compatible + Nebius endpoint, Pydantic-validated, heuristic fallback
 
 tests/               # 26 tests, fully offline (LLM path uses a stubbed client)
+examples/            # orchestrator_sim.py — runnable integration example (drives search(); no CLI)
 ```
 
 ## Tech stack

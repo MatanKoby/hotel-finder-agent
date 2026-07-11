@@ -12,17 +12,40 @@ the provider set (`providers.md`).
 | `llm_api_key` | `""` | `LLM_API_KEY` |
 | `llm_model` | `llama-3.3-70b-versatile` (verify current id at console.groq.com) | `LLM_MODEL` |
 | `llm_timeout` | `30.0` | `LLM_TIMEOUT` |
+| `llm_backend` | `auto` (else `openai` / `endpoint`) | `LLM_BACKEND` |
+| `nebius_endpoint_url` | `""` (orchestrator serverless endpoint) | `NEBIUS_ENDPOINT_URL` |
+| `nebius_endpoint_token` | `""` (bearer) | `NEBIUS_ENDPOINT_TOKEN` |
+| `nebius_endpoint_model` | `""` (auto-discovered via `/api/tags`) | `NEBIUS_ENDPOINT_MODEL` |
+| `liteapi_api_key` | `""` | `LITEAPI_API_KEY` |
+| `liteapi_base_url` | `https://api.liteapi.travel/v3.0` | `LITEAPI_BASE_URL` |
 | `min_candidates` | `8` | `MIN_CANDIDATES` |
 | `shortlist_size` | `15` | `SHORTLIST_SIZE` |
 | `max_widen_steps` | `2` | `MAX_WIDEN_STEPS` |
 | `widen_radius_km` | `3.0` | `WIDEN_RADIUS_KM` |
 | `band_budget_max` / `band_midrange_max` / `band_upscale_max` | `90 / 180 / 350` (EUR/night) | resp. |
 
-**LLM endpoint for this project: Nebius Token Factory** (see `scoring.md`). Set
-`LLM_BASE_URL=https://api.tokenfactory.nebius.com/v1/`, `LLM_API_KEY=<your Bearer key>`,
-`LLM_MODEL=<a chat model id from your Nebius console, e.g. a Llama or Qwen instruct model>`, and
-`SCORER=llm`. Nebius is OpenAI-compatible, so the existing scorer needs no code change; the
-hard-coded defaults above still point at Groq and are overridden by these env values.
+## LLM run modes (Nebius)
+
+Two ways to reach the LLM, **both contacted by this repo itself**, selected by `llm_backend`
+(`auto` picks `endpoint` when `NEBIUS_ENDPOINT_URL` is set, else `openai` when `LLM_API_KEY` is
+set, else heuristic). See `scoring.md`.
+
+- **Eval / testing (this repo): OpenAI-compatible + API key → Nebius Token Factory.** Set
+  `SCORER=llm`, `LLM_BASE_URL=https://api.tokenfactory.nebius.com/v1/`, `LLM_API_KEY=<Bearer key>`,
+  `LLM_MODEL=<a chat model id from your Nebius console>`. Uncapped model choice. (The hard-coded
+  defaults above point at Groq and are overridden by these values.)
+- **Orchestrator: shared Nebius serverless endpoint (no API key).** Set `SCORER=llm`,
+  `NEBIUS_ENDPOINT_URL=<shared endpoint https URL>`, `NEBIUS_ENDPOINT_TOKEN=<bearer>`. The model is
+  the single one the endpoint serves, auto-discovered via `GET {url}/api/tags` (override with
+  `NEBIUS_ENDPOINT_MODEL`). This speaks the Ollama REST API, not OpenAI.
+
+If neither is configured, or the LLM is unreachable, scoring falls back to the heuristic with a
+warning.
+
+## LiteAPI (data source)
+
+`LITEAPI_API_KEY` (a sandbox `sand_` key for M1) is sent as the `X-API-Key` header against
+`LITEAPI_BASE_URL`. See `data-sources.md` and `providers.md`.
 
 ## Price bands
 

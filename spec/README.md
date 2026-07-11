@@ -4,8 +4,8 @@
 (separate devs own a **flights** agent and an **activities/itinerary** agent; the orchestration
 layer above the three is out of scope for now). Given a location and constraints, it recommends
 where to stay across three "lenses": best value per price tier, overall standouts, and hidden
-gems. It is **stateless / idempotent** (a self-contained `HotelQuery` in, a `Recommendations`
-out) and **Python is a hard requirement**.
+gems. It is **stateless / idempotent** (a self-contained `HotelSearchRequest` in, a
+`HotelSearchResponse` out) and **Python is a hard requirement**.
 
 Status: **v1 vertical slice complete and verified** (26 tests passing, ruff + mypy clean).
 Greenfield project; Python 3.12; managed with `uv`.
@@ -20,13 +20,13 @@ two sections always change in tandem, they belong in the same file. Edit via the
   map, and the tech stack. Start here after this README.
 - **`domain-model.md`** — canonical domain types (`Hotel`, `GeoPoint`, `PriceBand`, `Amenity`)
   and amenity normalization (`models.py`).
-- **`contract.md`** — the request/response contract: `HotelQuery`, `Recommendations`, `Pick`,
-  `Intent`, `LensName` (`contracts.py`).
+- **`contract.md`** — the submodule `search()` API and request/response contract:
+  `HotelSearchRequest`, `HotelSearchResponse`, `Place`, `Stay`, `RateOffer`, `Pick` (`contracts.py`).
 - **`providers.md`** — the pluggable data-provider architecture (one folder per source:
   `api.py` + `adapter.py`).
 - **`data-sources.md`** — external catalog of evaluated real hotel/accommodation APIs, what each
   offers, live-test findings, and the chosen M1 source (LiteAPI).
-- **`pipeline.md`** — the deterministic orchestrator sequence (`recommend()`) and every stage
+- **`pipeline.md`** — the deterministic orchestrator sequence (`search()`) and every stage
   in detail (dedupe, filter + widening, shortlist, lenses, explain).
 - **`scoring.md`** — the one LLM-or-heuristic step: the `HotelScorer` interface, the heuristic
   default, and the opt-in LLM scorer.

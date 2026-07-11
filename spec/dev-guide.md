@@ -7,16 +7,26 @@ of these touches lives in the concern files linked below.
 
 ```bash
 make install            # uv sync (creates .venv, installs runtime + dev deps)
-make run                # demo on bundled mock data (offline, $0)
+make run                # run examples/orchestrator_sim.py (drives search() like the orchestrator)
 make check              # ruff + mypy + pytest
 # or:
-uv run python -m hotel_finder.demo --location Barcelona [--area "Barri Gotic"] [--scorer heuristic|llm]
+uv run python examples/orchestrator_sim.py
 uv run pytest
 ```
 
-**Enable the LLM scorer:** copy `.env.example` → `.env`, set `LLM_API_KEY` + `LLM_MODEL`, run
-with `--scorer llm` (or `SCORER=llm`). With no key it logs a warning and uses the heuristic (see
-`scoring.md`, `config.md`).
+There is no interactive CLI: hotel-finder is a library/submodule. `examples/orchestrator_sim.py` is
+the runnable example; the orchestrator imports `search` directly (see `contract.md`).
+
+**Real data + LLM scoring:** copy `.env.example` → `.env`. Set `LITEAPI_API_KEY` for real hotels
+(see `data-sources.md`). For scoring, pick a Nebius run mode (`config.md` → LLM run modes): a Token
+Factory `LLM_API_KEY` + `LLM_MODEL` for local eval, or `NEBIUS_ENDPOINT_URL` +
+`NEBIUS_ENDPOINT_TOKEN` for the shared serverless endpoint; then `SCORER=llm`. With neither, it
+warns and uses the heuristic (see `scoring.md`).
+
+**Local dev (orchestrator simulator):** `examples/orchestrator_sim.py` drives the `search()` API
+the way the orchestrator will (build `HotelSearchRequest` → `await search()` → read the
+`HotelSearchResponse` envelope), so the submodule contract runs end to end locally with a Token
+Factory key (heuristic without one). Systematic evaluation is post-M1. See `BUILD_QUEUE.md` → M1e.
 
 ## Tooling
 
@@ -28,7 +38,8 @@ deps: `pytest`, `pytest-asyncio`, `ruff`, `mypy` (all in `pyproject.toml`).
 - **pytest** `asyncio_mode=auto` (async tests need no decorator). 26 tests, fully offline (the
   LLM path uses a stubbed client).
 - `Makefile` targets: `install / lint / format / typecheck / test / check / run`.
-- Public entry re-exported: `from hotel_finder import recommend`.
+- Public entry re-exported: `from hotel_finder import search` (plus `HotelSearchRequest` /
+  `HotelSearchResponse`).
 
 ## How to extend
 

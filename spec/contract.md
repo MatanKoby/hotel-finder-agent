@@ -7,9 +7,13 @@ the entire interface.
 
 ## The submodule API surface
 
-- **One public entry point:** `async def search(request: HotelSearchRequest, settings=None) ->
-  HotelSearchResponse`, re-exported at the package top level
-  (`from hotel_finder import search, HotelSearchRequest, HotelSearchResponse`).
+- **Entry points:** `async def search(request: HotelSearchRequest, settings=None) ->
+  HotelSearchResponse`, plus a thin sync wrapper `search_sync(request, settings=None)` for
+  non-async callers. Both re-exported at the package top level
+  (`from hotel_finder import search, search_sync, HotelSearchRequest, HotelSearchResponse`).
+- **Config is injected or read from env.** `settings=None` reads env / `.env`; the orchestrator may
+  instead pass a `Settings`. **No `.env` is required when the library is imported** (see
+  `config.md`).
 - **The Pydantic v2 models are the contract, and the shared validator.** The orchestrator imports
   `HotelSearchRequest` from this submodule and constructs it *on its own side* before calling.
   Pydantic validates at construction and raises `pydantic.ValidationError` there,
@@ -35,6 +39,7 @@ the entire interface.
 - `place: Place` (required, see below)
 - `stay: Stay | None = None` (omit for content-only, no live prices)
 - `intent: Intent = ZONE`
+- `anchor_hotel: str | None = None` (for `anchor` intent, reserved; see `roadmap.md`)
 - `filters: Filters = Filters()`
 - `lenses: list[LensName] | None = None` (None means all three)
 - `picks_per_lens: int = 3` (ge=1)
@@ -62,9 +67,12 @@ is required.
 ### `Filters`
 
 - `price_min / price_max: float | None` (ge=0)
-- `min_star: int | None`, `min_guest_rating: float | None`
+- `min_star: int | None`, `min_guest_rating: float | None` (guest score, 0-10)
+- `refundable: bool | None` — `None` (default) returns both a cheapest-refundable and a
+  cheapest-non-refundable offer per hotel; `True`/`False` restricts to that kind.
 - `must_have_amenities: set[Amenity]` (see `domain-model.md`)
-- `property_types: set[str]` (hotel / hostel / apartment / ...)
+- `property_types: set[str]` — empty (default) returns **all** lodging types (hotels, hostels,
+  guesthouses, apartments, ...); a non-empty set narrows.
 
 Validators enforce `price_min <= price_max` and `check_in < check_out`.
 
@@ -101,26 +109,45 @@ exceptions it must catch.
 
 - `hotel: Hotel` — carries location, description, amenities, coordinates (see `domain-model.md`)
 - `score: float`, `subscores: dict[str, float]`, `rationale: str`
-- `offer: RateOffer | None` — the priced result; `None` when `stay` was omitted or no price was
-  found for that hotel
+- `offers: list[RateOffer]` — the priced results for this hotel (see Budget and offers below): up
+  to two (cheapest refundable + cheapest non-refundable) when `filters.refundable` is unset, one
+  when it is set. Empty when `stay` was omitted or no price was found.
 
 ### `RateOffer` (price info, read-only)
 
 - `total: float`, `currency: str`, `per_night: float | None`
-- `board: str | None` (e.g. `"Room Only"`, `"Breakfast Included"`), `refundable: bool | None`
+- `board: str | None` (e.g. `"Room Only"`, `"Breakfast Included"`)
+- `refundable: bool` — whether this rate is refundable
+- `over_budget: bool` — `True` when `total` exceeds `filters.price_max`; only appears in the
+  budget-too-low fallback (below)
 
 Read-only price information for M1. No booking token is carried: the LiteAPI prebook/book flow is
 deferred (see `roadmap.md` and `data-sources.md` → LiteAPI). If booking is picked up later, an
 opaque rate reference gets added here.
+
+### Budget and offers (the price contract)
+
+The hotel agent **is** the filter, not the orchestrator, so it does **not** return over-budget
+hotels wholesale:
+
+- **Normal case:** hotels within `filters.price_max` are returned across the lenses; every
+  `RateOffer` has `over_budget = False`.
+- Per hotel, offers are the **cheapest refundable** and **cheapest non-refundable** rate (or only
+  the kind set by `filters.refundable`).
+- **Budget-too-low fallback:** when too few (or no) hotels fit budget, rather than return empty the
+  agent surfaces the cheapest available options (capped at `picks_per_lens`), each `RateOffer`
+  flagged `over_budget = True`, sets `status = "degraded"`, and adds a `warning` such as
+  `"no hotels within EUR X; cheapest is EUR Y"`. The orchestrator sees the price floor, learns the
+  budget is too low, and can relax it and re-query, without being spammed.
 
 ### `RecommendationMeta`
 
 `providers_used`, `candidates_found`, `candidates_after_filter`, `shortlisted`, `scorer`,
 `widened`.
 
-Note: `scorer` reflects the **configured** scorer today. If the LLM scorer falls back to
-heuristic for a request, this still says `llm` and a `warning` records the fallback (making
-`meta.scorer` report the effective scorer is tracked in `roadmap.md` / `BUILD_QUEUE.md`).
+Note: `scorer` reports the scorer that **actually ran**. If the LLM scorer falls back to heuristic
+(no credentials, endpoint unreachable, bad output), `scorer` reads `heuristic` and a `warning`
+records the fallback (see `scoring.md`, Batch M1e in `BUILD_QUEUE.md`).
 
 ## Status vs the current code
 

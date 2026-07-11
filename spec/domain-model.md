@@ -12,7 +12,8 @@ or a price:
 - `id`, `source` (provenance), `name`
 - `location: GeoPoint | None`, `area`, `address`
 - `price_per_night`, `currency`, `price_band: PriceBand | None`
-- `rating` (0 to 5), `review_count`, `star_rating` (1 to 5)
+- `rating` (guest review score, **0 to 10**, booking.com style), `review_count`,
+  `star_rating` (hotel class, 1 to 5)
 - `amenities: set[Amenity]`
 - `url`, `description` (free text the LLM reads for "character")
 - `raw: dict` (original payload), `sources: list[str]` (provenance; grows on dedupe)

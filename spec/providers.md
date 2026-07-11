@@ -11,7 +11,7 @@ live here; they live in the pipeline (`pipeline.md`).
 ## Two concerns per provider, in two files
 
 - **`api.py` — the provider API.** Talks to the source and returns **raw** records in its native
-  shape: `async def fetch(self, query: HotelQuery) -> list[dict]`. (Mock reads `fixtures/*.json`
+  shape: `async def fetch(self, query: HotelSearchRequest) -> list[dict]`. (Mock reads `fixtures/*.json`
   and ignores the query; a real one builds an HTTP request; a scraper fetches and parses.)
 - **`adapter.py` — the provider adapter.** `def to_hotel(self, raw: dict) -> Hotel`. All
   **per-source** normalization lives here: field mapping, amenity-vocab mapping (via

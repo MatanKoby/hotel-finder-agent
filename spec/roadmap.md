@@ -9,32 +9,41 @@ from this file is tracked as batches in `BUILD_QUEUE.md`.
 **Done:** full vertical slice — contract + mock provider + all stages + heuristic & LLM scorers
 + 3 lenses + demo; 26 offline tests; ruff + mypy clean. Git initialized. Commit on request.
 
-## Milestone 1: first real results from a live CLI (in planning)
+## Milestone 1: submodule-ready with real results (in planning)
 
-**Goal.** With a LiteAPI key and a Nebius key in `.env`, run an interactive CLI, type a location,
-and get **real** hotels and accommodation options nearby (real names, descriptions, coordinates,
-and prices), presented across the three lenses and scored by the Nebius LLM. This proves the
-pipeline end to end against a live source, and pulls "real provider folders" and "real
-geocoding" (listed below) forward into this milestone. The Definition of Done and the M1 batch
-breakdown (M1a–M1e) live in `BUILD_QUEUE.md`.
+**Goal.** Deliver hotel-finder as an importable **git submodule** the orchestrator can integrate as
+its **first example**. With a LiteAPI key and Nebius LLM access configured (env, or a `Settings`
+injected by the caller), the orchestrator builds a `HotelSearchRequest`, calls `search()`, and gets
+a `HotelSearchResponse` with **real** hotels and accommodations nearby (real names, descriptions,
+coordinates, and prices), across the three lenses, scored by the Nebius LLM. This proves the
+pipeline end to end against a live source, and pulls "real provider folders" and "real geocoding"
+forward into this milestone. A minimal `examples/orchestrator_sim.py` exercises the import →
+`search()` → envelope path locally; **there is no interactive CLI**. The Definition of Done and the
+M1 batch breakdown (M1a–M1e) live in `BUILD_QUEUE.md`.
 
-**This repo is a git submodule of an orchestrator agent.** The primary interface is therefore the
-typed `search()` API, not the CLI: the orchestrator imports `HotelSearchRequest` from this
-submodule, validates its input against that shared model, and calls `search()` to get a
-`HotelSearchResponse` envelope (see `contract.md`). The interactive CLI is the human-facing demo
-that exercises the same `search()` path end to end.
+**This repo is a git submodule of an orchestrator agent.** The interface is the typed `search()`
+API (async) plus a thin sync `search_sync()`: the orchestrator imports `HotelSearchRequest` from
+this submodule, validates its input against that shared model, and calls `search()` to get a
+`HotelSearchResponse` envelope (see `contract.md`). **No `.env` is required when imported**: config
+comes from the caller's environment or an injected `Settings`.
 
 **Approved (planning session 2026-07-10):**
 
-- **Nebius is the LLM provider only**, not a data source. It is Nebius Token Factory,
-  OpenAI-compatible; the existing `LLMScorer` reaches it via env with no code change (see
-  `scoring.md`, `config.md`). In M1 it does scoring and enrichment.
+- **Nebius is the LLM provider only**, not a data source. In M1 it does scoring and enrichment,
+  reached behind the `HotelScorer` interface (see `scoring.md`, `config.md`).
+- **Two LLM run modes** (mirroring the sibling flight agent). **Eval/testing** inside this repo
+  uses a Nebius **Token Factory** model via an API key (uncapped model choice). The
+  **orchestrator** context uses a **shared Nebius Serverless AI endpoint** (Ollama REST, bearer
+  token, no API key, single served model auto-discovered). This repo contacts both itself; it is
+  never handed an endpoint by the orchestrator. See `scoring.md`, `config.md`.
 - **Results must be real.** No LLM-fabricated listings in M1.
 - **At least one working real, free data API** is required for M1. The design should support
   **multiple** free hotel/accommodation sources over time; the provider architecture in
   `providers.md` already allows adding sources without core changes.
-- **Interactive CLI.** It prompts for a location and returns lodging nearby, spanning hotels and
-  broader accommodation types (hostels, guesthouses, apartments, and similar). See `dev-guide.md`.
+- **No interactive CLI.** hotel-finder is used as a library/submodule, not a user-facing CLI. The
+  `search()` path is exercised locally by a minimal `examples/orchestrator_sim.py` and by tests
+  (see `BUILD_QUEUE.md`). It still spans hotels and broader accommodation types (hostels,
+  guesthouses, apartments, and similar).
 - **LLM web search as a backup source** is wanted, but secondary to landing the first real API
   (chat completions do not browse, so it needs a separate search tool/API). Likely a follow-up,
   not part of the first working slice.
@@ -59,7 +68,7 @@ catalogued in `data-sources.md` → Future direction and to be broken into batch
   distance filtering and ranking are exact rather than name-match (touches `pipeline.md` filter
   and shortlist stages). **Now pulled into Milestone 1 above** (via free Nominatim).
 - **`ANCHOR` intent** — resolve a named hotel → its band/area/rating, then find peers within
-  that envelope. The field is already reserved on `HotelQuery` (see `contract.md`).
+  that envelope. The field is already reserved on `HotelSearchRequest` (see `contract.md`).
 - **Booking flow (LiteAPI prebook / book / retrieve / cancel).** LiteAPI supports it off the rate
   `offerId`, but M1 (and v1) is read-only recommendation. Noted for the future in
   `data-sources.md` → LiteAPI. Out of scope now.
