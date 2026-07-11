@@ -34,53 +34,11 @@ scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). P
 (testing, evaluation, quality) follow.
 
 > **Pick-order pointer for "continue".** "Continue working towards the first milestone" means:
-> claim and build the M1 batches in order, starting with **M1a** (the foundation, no deps), then
-> M1b/M1c/M1d (parallelizable), then **M1e** (integration surface + example, integrates last).
-> Claim each via `specflow/procedures/claim-batch.md`, record it in `CLAIMS.md`, and run
-> `make check` as the gate. Only if the instruction is genuinely ambiguous, ask which batch.
-
----
-
-## Batch M1a — Contract + the submodule search API
-
-**Milestone 1. Foundation** for every other M1 batch. Ready.
-
-**Depends on:** none.
-
-**Goal.** Refactor `contracts.py` from the v1 `HotelQuery` / `Recommendations` to the submodule
-API in `spec/contract.md`: a validated `HotelSearchRequest` in, a `HotelSearchResponse` envelope
-out, exported so an orchestrator can validate input on its own side before calling.
-
-### Deliverables
-- Request models: `Place` (structured `country_code`+`city` / `center`+`radius_km`, plus a
-  `text` geocode fallback and `desired_area`), `Occupancy`, `Stay` (optional), `Filters`
-  (incl. `refundable: bool | None`), `HotelSearchRequest`. Validators for price and date ranges;
-  `extra="forbid"`.
-- Response models: `RateOffer` (total/currency/per_night/board/refundable/over_budget, no booking
-  token), `ResolvedQuery`, `Pick` (adds `offers: list[RateOffer]`), `HotelSearchResponse`
-  (`status` ok/empty/degraded + `warnings`, never raises for a data outcome). The budget-and-offers
-  rule from `spec/contract.md`.
-- Entry points: `async def search(request, settings=None) -> HotelSearchResponse` and a thin sync
-  `search_sync(request, settings=None)`. `settings=None` reads env; a caller may inject `Settings`.
-  Re-export `search`, `search_sync`, `HotelSearchRequest`, `HotelSearchResponse` (and sub-models)
-  from `hotel_finder/__init__.py`.
-- Pipeline produces the envelope (populates `status`, `warnings`, `resolved`) instead of raising
-  on empty/degraded outcomes.
-
-### Files this batch creates/edits
-- `src/hotel_finder/contracts.py` (rewrite), `src/hotel_finder/__init__.py` (exports),
-  `src/hotel_finder/pipeline.py` (build envelope; map `Place`/`Stay`; `search_sync`),
-  `stages/explain.py` (`offers`), `tests/` (validation raises at construction; envelope
-  status/warnings; content-only when `stay` omitted).
-
-### Does NOT touch
-- Scoring math; the LiteAPI provider (M1b); the geocoding impl (M1c) — the `text` fallback can be
-  a stub here.
-
-### Verification
-- `make check` green; a `HotelSearchRequest` built from a mapping validates and a malformed one
-  raises `ValidationError` at construction; `search()`/`search_sync()` return a
-  `HotelSearchResponse` envelope.
+> claim and build the remaining M1 batches in order. **M1a (the foundation) is done** (see
+> `specflow/history/BUILD_QUEUE_DONE.md`); next are **M1b/M1c/M1d** (parallelizable, all depend
+> only on M1a), then **M1e** (integration surface + example, integrates last). Claim each via
+> `specflow/procedures/claim-batch.md`, record it in `CLAIMS.md`, and run `make check` as the gate.
+> Only if the instruction is genuinely ambiguous, ask which batch.
 
 ---
 
