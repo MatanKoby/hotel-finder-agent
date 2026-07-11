@@ -66,6 +66,7 @@ async def search(
 
     scorer = make_scorer(settings)
     scored = await scorer.score(short, context)
+    warnings.extend(scorer.report.warnings)  # e.g. an LLM -> heuristic fallback
 
     offers_by_id = {s.hotel.id: _offers_for(s.hotel, request) for s in scored}
     lenses_out = _build_lenses(scored, request, offers_by_id)
@@ -76,7 +77,7 @@ async def search(
         candidates_found=candidates_found,
         candidates_after_filter=len(filtered),
         shortlisted=len(short),
-        scorer=settings.scorer,
+        scorer=scorer.report.scorer,  # the scorer that actually ran (heuristic on fallback)
         widened=widened,
     )
     return HotelSearchResponse(

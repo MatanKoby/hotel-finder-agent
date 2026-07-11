@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     llm_model: str = "llama-3.3-70b-versatile"
     llm_timeout: float = 30.0
 
+    # Which LLM transport to use: "auto" picks `endpoint` when NEBIUS_ENDPOINT_URL is set, else
+    # `openai` when LLM_API_KEY is set, else the heuristic. Force with openai/endpoint.
+    llm_backend: str = "auto"  # "auto" | "openai" | "endpoint"
+
+    # --- Nebius serverless endpoint (orchestrator run mode; Ollama REST, no API key) ---
+    nebius_endpoint_url: str = ""  # shared endpoint https URL
+    nebius_endpoint_token: str = ""  # bearer token
+    nebius_endpoint_model: str = ""  # blank = auto-discover the single served model via /api/tags
+
     # --- LiteAPI data source (real hotels, content, prices; see data-sources.md) ---
     liteapi_api_key: str = ""  # sandbox `sand_` key for M1; sent as the X-API-Key header
     liteapi_base_url: str = "https://api.liteapi.travel/v3.0"

@@ -104,6 +104,16 @@ async def test_lenses_subset_is_honored() -> None:
     assert set(response.lenses) == {LensName.OVERALL_STANDOUTS}
 
 
+async def test_llm_without_credentials_reports_heuristic_fallback() -> None:
+    # scorer=llm but no LLM backend configured -> the pipeline reports the effective scorer.
+    request = HotelSearchRequest(place=Place(city="Barcelona"))
+    response = await search(request, _settings(scorer="llm"))
+
+    assert response.meta.scorer == "heuristic"
+    assert response.status == "degraded"
+    assert any("heuristic" in w for w in response.warnings)
+
+
 def test_search_sync_returns_envelope() -> None:
     request = HotelSearchRequest(place=Place(city="Barcelona"))
     response = search_sync(request, _settings())

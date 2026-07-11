@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from hotel_finder.context import SearchContext
 from hotel_finder.models import Hotel
-from hotel_finder.scoring.base import ScoredHotel, overall_score
+from hotel_finder.scoring.base import ScoredHotel, ScoreReport, overall_score
 from hotel_finder.utils.geo import haversine
 from hotel_finder.utils.text import normalize_text
 
@@ -78,6 +78,10 @@ def _rationale(hotel: Hotel, subscores: dict[str, float]) -> str:
 
 class HeuristicScorer:
     """Scores hotels with a deterministic formula over their structured fields."""
+
+    @property
+    def report(self) -> ScoreReport:
+        return ScoreReport(scorer="heuristic")
 
     async def score(self, hotels: list[Hotel], context: SearchContext) -> list[ScoredHotel]:
         prices = [h.price_per_night for h in hotels if h.price_per_night is not None]

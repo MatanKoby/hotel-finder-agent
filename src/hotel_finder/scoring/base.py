@@ -7,6 +7,7 @@ heuristic and the LLM scorer use it so the downstream lens logic stays consisten
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,8 +27,22 @@ class ScoredHotel(BaseModel):
     rationale: str = ""
 
 
+@dataclass(frozen=True)
+class ScoreReport:
+    """What a scorer **actually** did on its last run, so the pipeline can report the effective
+    scorer and surface a fallback as a warning (see ``contract.md`` → ``meta.scorer``)."""
+
+    scorer: str  # "heuristic" | "llm"
+    warnings: list[str] = field(default_factory=list)
+
+
 class HotelScorer(Protocol):
     """Scores a shortlist on the fuzzy axes. Called exactly once per request."""
+
+    @property
+    def report(self) -> ScoreReport:
+        """The effective-scorer report from the most recent :meth:`score` call."""
+        ...
 
     async def score(self, hotels: list[Hotel], context: SearchContext) -> list[ScoredHotel]: ...
 
