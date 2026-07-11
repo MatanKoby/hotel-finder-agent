@@ -6,8 +6,11 @@ thresholds, and the price-band cutoffs used to derive a band from a bare price.
 
 from __future__ import annotations
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from typing import Annotated
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from hotel_finder.models import PriceBand
 
@@ -18,8 +21,20 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- providers & scorer selection ---
-    enabled_providers: list[str] = Field(default_factory=lambda: ["mock"])
+    # `NoDecode` + the validator below let `ENABLED_PROVIDERS` be a plain comma-separated string
+    # (e.g. `liteapi` or `mock,liteapi`) as well as a JSON list.
+    enabled_providers: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["mock"])
     scorer: str = "heuristic"  # "heuristic" | "llm"
+
+    @field_validator("enabled_providers", mode="before")
+    @classmethod
+    def _parse_providers(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [item.strip() for item in text.split(",") if item.strip()]
+        return value
 
     # --- LLM scorer (OpenAI-compatible endpoint; defaults target Groq's free tier) ---
     llm_base_url: str = "https://api.groq.com/openai/v1"

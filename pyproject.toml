@@ -11,9 +11,6 @@ dependencies = [
     "httpx>=0.27",
 ]
 
-[project.scripts]
-hotel-finder = "hotel_finder.demo:main"
-
 [dependency-groups]
 dev = [
     "pytest>=8.0",

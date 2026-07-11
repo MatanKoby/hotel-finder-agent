@@ -19,4 +19,4 @@ test:
 check: lint typecheck test
 
 run:
-	uv run python -m hotel_finder.demo --location Barcelona
+	uv run python examples/orchestrator_sim.py
