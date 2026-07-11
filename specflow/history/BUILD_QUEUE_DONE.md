@@ -10,6 +10,15 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch M1b — LiteAPI provider (real hotels, content, and prices)
+Shipped `providers/liteapi/` (`api.py` httpx client for `data/hotels` + `hotels/rates`, `adapter.py`
+mapping to `Hotel` + cheapest refundable/non-refundable offers per `spec/data-sources.md`,
+`provider.py` two-call join) plus a shipped `facilities.json` id→amenity dict and `utils.strip_html`.
+Registry moved to provider factories (`Settings -> HotelProvider`); `pipeline._offers_for` reads
+provider offers from `hotel.raw["offers"]`. Disabled by default. Key commit `00247df`. `make check`
+green, 47 tests; verified live against the LiteAPI sandbox (50 real Barcelona hotels + rates).
+Deferred: `filters.property_types` narrowing (needs a `hotelTypeId`→label dict).
+
 ## Batch M1a — Contract + the submodule search API
 Shipped the submodule request/response surface (`spec/contract.md`): `HotelSearchRequest`
 (`Place`/`Occupancy`/`Stay`/`Filters`, `extra="forbid"`, validators) in, a `HotelSearchResponse`

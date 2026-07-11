@@ -19,13 +19,45 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
-### Batch M1b — LiteAPI provider (real hotels, content, and prices)
-- Owner: claude
-- Started: 2026-07-11 14:31
-
 ## Completed
 
 <!-- Recent finishes, newest first. Older entries archived to specflow/history/CLAIMS_DONE.md. -->
+
+### Batch M1b — LiteAPI provider (real hotels, content, and prices)
+- Owner: claude
+- Started: 2026-07-11 14:31
+- Finished: 2026-07-11 14:43
+- Commit: 00247df
+
+**What shipped.** A self-contained `providers/liteapi/` folder: `api.py` (async `httpx`
+`LiteApiClient` for `GET data/hotels` discovery+content and `POST hotels/rates`, `X-API-Key`
+header), `adapter.py` (maps a `data/hotels` item → `Hotel` per the `spec/data-sources.md` mapping
+table: coords, `city`→area, `stars`→`star_rating`, guest `rating` kept 0-10, `reviewCount`,
+`facilityIds`→`Amenity` via the shipped `facilities.json` id→name dict + `normalize_amenity`,
+HTML `hotelDescription` stripped; and `hotels/rates` → the **cheapest refundable + cheapest
+non-refundable** offer per hotel, `refundableTag` "RFN"→True/"NRFN"→False), and `provider.py`
+(the two-call join; rates fetched only when `stay` is present). The registry moved to **provider
+factories** (`Settings -> HotelProvider`) so real sources get credentials; the pipeline now calls
+`get_providers(names, settings)`. `pipeline._offers_for` prefers provider-normalized offer dicts in
+`hotel.raw["offers"]` (falls back to synthesizing from `price_per_night` for the mock), applying the
+budget flag and `refundable` filter once. Added `LITEAPI_API_KEY`/`LITEAPI_BASE_URL`/
+`LITEAPI_TIMEOUT` to `Settings`, `httpx` to deps, and `utils.strip_html`. LiteAPI is **disabled by
+default** (`enabled_providers=["mock"]`), so CI stays offline.
+
+**Verification.** `make check` green (ruff + mypy strict on 30 source files); pytest 47 passed
+(+7 in `tests/test_liteapi.py`: adapter mapping from the recorded fixtures, cheapest-of-each-kind
+offers, content-only, stubbed-client provider join, and a stubbed end-to-end pipeline run incl.
+over-budget fallback and the refundable filter). Also **verified live** against the LiteAPI sandbox
+key in `.env`: `search()` with `enabled_providers=["liteapi"]` returned 50 real Barcelona hotels
+with real names, stars, 0-10 ratings, and EUR rates + refundable flags, `status=ok`.
+
+**Deferred / notes.** `filters.property_types` narrowing is **not enforced** yet: LiteAPI gives an
+integer `hotelTypeId` (stored in `raw`) but there is no recorded type-id→label dictionary to match
+against (parallel to `facilities.json`); flag for the user — either record that dict or drop the
+field. Rates use the retail `total`; `suggestedSellingPrice`/`rateId`/`offerId` are ignored (booking
+deferred). No `.env` needed for the offline path; live use needs `LITEAPI_API_KEY`. Next: M1c
+(place resolution / geocoding) and M1d (Nebius scoring), then M1e. `dev` remains local-only,
+unpushed.
 
 ### Batch M1a — Contract + the submodule search API
 - Owner: claude

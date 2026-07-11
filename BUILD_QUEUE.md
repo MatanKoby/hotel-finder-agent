@@ -42,47 +42,6 @@ scorers, lenses, 26 tests) is already done (see `spec/roadmap.md` → Status). P
 
 ---
 
-## Batch M1b — LiteAPI provider (real hotels, content, and prices)
-
-**Milestone 1.** The one real, free data source (`spec/data-sources.md` → LiteAPI, verified). Ready.
-
-**Depends on:** M1a (for the `RateOffer` / `Hotel` shapes the adapter targets).
-
-**Goal.** Add LiteAPI as a self-contained provider folder that returns **real** lodging with
-location, description, and price, proving the provider architecture end to end against a live
-source (`spec/providers.md`, `spec/dev-guide.md` → Add a data source).
-
-### Deliverables
-- `providers/liteapi/api.py`: `data/hotels` discovery (by `country_code`+`city` or
-  `center`+`radius`) for content, then `POST hotels/rates` with the returned `hotelIds` for
-  prices (only when `stay` is present). Sends `X-API-Key` from `LITEAPI_API_KEY`.
-- `providers/liteapi/adapter.py`: normalize LiteAPI payloads to `Hotel` (name, coords, address,
-  description, `stars`→`star_rating`, guest `rating` kept **0-10**, `review_count`, `facilityIds`
-  mapped onto `Amenity` via the committed `data_facilities.json` id→name dict then
-  `normalize_amenity`), and per hotel the **cheapest refundable + cheapest non-refundable** rate
-  to `RateOffer`(s) (total/currency/per_night/board/refundable/over_budget). **Exact field mapping
-  is in `spec/data-sources.md` → LiteAPI to domain mapping.** All lodging types by default;
-  `filters.property_types` narrows.
-- Registered in `providers/registry.py`; runs when `liteapi` is in `enabled_providers`; upstream
-  errors are caught and surfaced as `warnings`, never fatal.
-- Offline test from the **recorded fixtures** in `tests/fixtures/liteapi/` (already captured:
-  `data_hotels_barcelona.json`, `hotels_rates_barcelona.json`, `data_facilities.json`); no network
-  in CI; secrets via `.env` only.
-
-### Files this batch creates/edits
-- `src/hotel_finder/providers/liteapi/` (new), `providers/registry.py`, `config.py`
-  (`LITEAPI_API_KEY`, base URL — additive), `.env.example`, `tests/` (uses
-  `tests/fixtures/liteapi/*.json`, already recorded).
-
-### Does NOT touch
-- The mock provider, pipeline stages, scoring math.
-
-### Verification
-- `make check` green with `liteapi` disabled by default; an integration test drives the adapter
-  from a recorded payload and yields valid `Hotel`s with a `RateOffer`.
-
----
-
 ## Batch M1c — Place resolution (structured passthrough + text geocoding)
 
 **Milestone 1.** Turns `Place` into what LiteAPI and distance ranking need. Ready.
