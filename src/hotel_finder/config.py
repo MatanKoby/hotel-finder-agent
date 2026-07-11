@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     liteapi_base_url: str = "https://api.liteapi.travel/v3.0"
     liteapi_timeout: float = 30.0
 
+    # --- geocoding (free-text Place resolution; free keyless Nominatim, needs a User-Agent) ---
+    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
+    geocoder_user_agent: str = "hotel-finder/0.1 (+https://github.com/MatanKoby/hotel-finder)"
+    geocoder_timeout: float = 10.0
+
     # --- pipeline thresholds ---
     min_candidates: int = 8  # below this after filtering, try the bounded-agency widening
     shortlist_size: int = 15  # how many candidates reach the scorer

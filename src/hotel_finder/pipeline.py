@@ -35,6 +35,7 @@ from hotel_finder.stages.dedupe import dedupe
 from hotel_finder.stages.explain import to_picks
 from hotel_finder.stages.filtering import FilterCriteria, hard_filter
 from hotel_finder.stages.shortlist import shortlist
+from hotel_finder.utils.geocode import make_geocoder
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,11 @@ async def search(
     settings = settings or Settings()
     warnings: list[str] = []
 
-    resolved = _resolve(request, warnings)
+    resolved, request = await _resolve(request, settings, warnings)
     context = SearchContext(
         center=resolved.center,
         desired_area=request.place.desired_area,
-        location_label=request.place.city or request.place.text,
+        location_label=resolved.city or request.place.text,
         filters=request.filters,
     )
 
@@ -98,23 +99,51 @@ def search_sync(
     return asyncio.run(search(request, settings))
 
 
-def _resolve(request: HotelSearchRequest, warnings: list[str]) -> ResolvedQuery:
-    """Resolve ``Place`` into what the pipeline searched. Structured passthrough for M1a;
-    geocoding of free-text places lands in M1c (until then, warn and proceed broadly)."""
+async def _resolve(
+    request: HotelSearchRequest, settings: Settings, warnings: list[str]
+) -> tuple[ResolvedQuery, HotelSearchRequest]:
+    """Resolve ``Place`` into what the pipeline actually searches.
+
+    Structured fields pass through. When only ``text`` is given, geocode it (non-fatally) into a
+    ``center`` + ``city`` + ``country_code``. Returns the ``ResolvedQuery`` (for the response) and
+    an **effective request** whose ``place`` carries the resolved fields, so providers discover
+    against them.
+    """
     place = request.place
-    if place.center is None and not place.city and place.text:
-        warnings.append(
-            f"free-text place {place.text!r} was not geocoded (not yet supported); "
-            "results may be broad"
-        )
+    center = place.center
+    city = place.city
+    country_code = place.country_code
+
+    if center is None and not city and place.text:
+        result = None
+        failed = False
+        try:
+            result = await make_geocoder(settings).geocode(place.text)
+        except Exception as exc:  # noqa: BLE001 — geocoding must never crash a search
+            failed = True
+            logger.warning("geocoding %r failed: %s", place.text, exc)
+            warnings.append(f"geocoding {place.text!r} failed ({exc}); results may be broad")
+        if result is not None:
+            center = GeoPoint(lat=result.lat, lon=result.lon)
+            city = result.city or city
+            country_code = result.country_code or country_code
+        elif not failed:
+            warnings.append(f"could not geocode {place.text!r}; results may be broad")
+
+    effective_place = place.model_copy(
+        update={"center": center, "city": city, "country_code": country_code}
+    )
+    effective_request = request.model_copy(update={"place": effective_place})
+
     stay = request.stay
-    return ResolvedQuery(
-        center=place.center,
-        city=place.city,
+    resolved = ResolvedQuery(
+        center=center,
+        city=city,
         check_in=stay.check_in if stay else None,
         check_out=stay.check_out if stay else None,
         currency=stay.currency if stay else None,
     )
+    return resolved, effective_request
 
 
 async def _gather(
