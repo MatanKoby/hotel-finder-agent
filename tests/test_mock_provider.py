@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+from hotel_finder.config import Settings
 from hotel_finder.contracts import HotelSearchRequest, Place
 from hotel_finder.models import Amenity
 from hotel_finder.providers.registry import get_provider
 
 _REQUEST = HotelSearchRequest(place=Place(city="Barcelona"))
+_SETTINGS = Settings(_env_file=None)
 
 
 async def test_loads_all_fixtures() -> None:
-    hotels = await get_provider("mock").search(_REQUEST)
+    hotels = await get_provider("mock", _SETTINGS).search(_REQUEST)
     assert len(hotels) == 14
     assert all(h.source == "mock" for h in hotels)
 
 
 async def test_adapter_normalizes_amenities_and_fields() -> None:
-    hotels = await get_provider("mock").search(_REQUEST)
+    hotels = await get_provider("mock", _SETTINGS).search(_REQUEST)
     by_id = {h.id: h for h in hotels}
 
     palace = by_id["bcn-008"]

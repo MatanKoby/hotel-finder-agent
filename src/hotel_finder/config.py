@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     llm_model: str = "llama-3.3-70b-versatile"
     llm_timeout: float = 30.0
 
+    # --- LiteAPI data source (real hotels, content, prices; see data-sources.md) ---
+    liteapi_api_key: str = ""  # sandbox `sand_` key for M1; sent as the X-API-Key header
+    liteapi_base_url: str = "https://api.liteapi.travel/v3.0"
+    liteapi_timeout: float = 30.0
+
     # --- pipeline thresholds ---
     min_candidates: int = 8  # below this after filtering, try the bounded-agency widening
     shortlist_size: int = 15  # how many candidates reach the scorer

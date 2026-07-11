@@ -54,7 +54,7 @@ async def search(
         filters=request.filters,
     )
 
-    providers = get_providers(settings.enabled_providers)
+    providers = get_providers(settings.enabled_providers, settings)
     candidates = await _gather(providers, request, warnings)
     candidates = dedupe(candidates)
     candidates_found = len(candidates)
@@ -200,29 +200,46 @@ def _filter_with_widening(
 
 
 def _offers_for(hotel: Hotel, request: HotelSearchRequest) -> list[RateOffer]:
-    """Build read-only offers for a hotel. Content-only (no ``stay``) yields no offers.
+    """Read-only offers for a hotel. Content-only (no ``stay``) yields no offers.
 
-    M1a derives a single offer from the provider's ``price_per_night``; the LiteAPI provider (M1b)
-    replaces this with real cheapest-refundable / cheapest-non-refundable rates.
+    A provider that fetched real rates leaves normalized offer dicts in ``hotel.raw["offers"]``
+    (e.g. LiteAPI's cheapest-refundable + cheapest-non-refundable). Otherwise a single offer is
+    derived from the provider's ``price_per_night`` (the mock path). Either way the budget flag and
+    an explicit ``refundable`` filter are applied here, once.
     """
     stay = request.stay
-    if stay is None or hotel.price_per_night is None:
+    if stay is None:
         return []
-    nights = (stay.check_out - stay.check_in).days
-    per_night = hotel.price_per_night
+
+    raw_offers = hotel.raw.get("offers")
+    if raw_offers:
+        offers = [RateOffer(**offer) for offer in raw_offers]
+    elif hotel.price_per_night is not None:
+        nights = (stay.check_out - stay.check_in).days
+        offers = [
+            RateOffer(
+                total=round(hotel.price_per_night * nights, 2),
+                currency=hotel.currency or stay.currency,
+                per_night=hotel.price_per_night,
+                board=None,
+                refundable=True,  # no cancellation data on this path
+            )
+        ]
+    else:
+        return []
+
     price_max = request.filters.price_max
-    offer = RateOffer(
-        total=round(per_night * nights, 2),
-        currency=hotel.currency or stay.currency,
-        per_night=per_night,
-        board=None,
-        refundable=True,  # mock has no cancellation data; real refundability arrives in M1b
-        over_budget=price_max is not None and per_night > price_max,
-    )
-    # Respect an explicit refundable filter (mostly moot until real rate kinds exist in M1b).
-    if request.filters.refundable is not None and offer.refundable != request.filters.refundable:
-        return []
-    return [offer]
+    want_refundable = request.filters.refundable
+    result: list[RateOffer] = []
+    for offer in offers:
+        basis = offer.per_night if offer.per_night is not None else offer.total
+        flagged = offer.model_copy(
+            update={"over_budget": price_max is not None and basis > price_max}
+        )
+        if want_refundable is not None and flagged.refundable != want_refundable:
+            continue
+        result.append(flagged)
+    return result
 
 
 def _build_lenses(
