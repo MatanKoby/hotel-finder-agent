@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch M1d — Nebius LLM scoring (two transports) + effective-scorer reporting
+- Owner: claude
+- Started: 2026-07-11 14:54
+
 ## Completed
 
 ### Batch M1c — Place resolution (structured passthrough + text geocoding)
