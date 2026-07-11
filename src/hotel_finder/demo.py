@@ -1,17 +1,19 @@
 """Run the agent end-to-end from the command line and print the three lenses.
 
-uv run python -m hotel_finder.demo --location Barcelona
-uv run python -m hotel_finder.demo --location Barcelona --area "Barri Gotic" --scorer llm
+A thin developer convenience over the ``search`` API (the submodule has no interactive CLI of its
+own; this is replaced by ``examples/orchestrator_sim.py`` in M1e).
+
+    uv run python -m hotel_finder.demo --location Barcelona
+    uv run python -m hotel_finder.demo --location Barcelona --area "Barri Gotic" --scorer llm
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 
 from hotel_finder.config import Settings
-from hotel_finder.contracts import HotelQuery, LensName, Recommendations
-from hotel_finder.pipeline import recommend
+from hotel_finder.contracts import HotelSearchRequest, HotelSearchResponse, LensName, Place
+from hotel_finder.pipeline import search_sync
 
 _LENS_TITLES = {
     LensName.STRATIFIED_BEST: "Best in each price tier",
@@ -36,19 +38,21 @@ def main() -> None:
     if args.scorer is not None:
         settings = settings.model_copy(update={"scorer": args.scorer})
 
-    query = HotelQuery(location=args.location, desired_area=args.area)
-    recommendations = asyncio.run(recommend(query, settings))
-    _print(recommendations)
+    request = HotelSearchRequest(place=Place(city=args.location, desired_area=args.area))
+    _print(search_sync(request, settings))
 
 
-def _print(recommendations: Recommendations) -> None:
-    meta = recommendations.meta
+def _print(response: HotelSearchResponse) -> None:
+    meta = response.meta
     print(
-        f"\nRecommendations  (scorer={meta.scorer}, providers={meta.providers_used}, "
-        f"found={meta.candidates_found}, after_filter={meta.candidates_after_filter}, "
-        f"shortlisted={meta.shortlisted}, widened={meta.widened})"
+        f"\nRecommendations  (status={response.status}, scorer={meta.scorer}, "
+        f"providers={meta.providers_used}, found={meta.candidates_found}, "
+        f"after_filter={meta.candidates_after_filter}, shortlisted={meta.shortlisted}, "
+        f"widened={meta.widened})"
     )
-    for lens, picks in recommendations.lenses.items():
+    for warning in response.warnings:
+        print(f"  ! {warning}")
+    for lens, picks in response.lenses.items():
         print(f"\n== {_LENS_TITLES.get(lens, lens.value)} ==")
         if not picks:
             print("  (none)")

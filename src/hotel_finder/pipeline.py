@@ -1,24 +1,31 @@
-"""The deterministic orchestrator — ``recommend()``.
+"""The deterministic orchestrator — ``search()`` — and the thin ``search_sync()`` wrapper.
 
-Sequences the fixed stages in plain code (no LLM-chosen control flow): gather → dedupe → derive
-price bands → hard-filter with bounded-agency widening → shortlist → score once → lenses →
-explain. This is the agent's single public entry point.
+Sequences the fixed stages in plain code (no LLM-chosen control flow): resolve → gather → dedupe →
+derive price bands → hard-filter with bounded-agency widening → shortlist → score once → lenses →
+explain. It returns a ``HotelSearchResponse`` **envelope**: data problems become ``warnings`` +
+``status``, never exceptions (see ``contract.md`` → Error philosophy). This is the submodule's
+single public entry point.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
+from typing import Literal
 
 from hotel_finder.config import Settings
+from hotel_finder.context import SearchContext
 from hotel_finder.contracts import (
-    HotelQuery,
+    HotelSearchRequest,
+    HotelSearchResponse,
     LensName,
     Pick,
+    RateOffer,
     RecommendationMeta,
-    Recommendations,
+    ResolvedQuery,
 )
-from hotel_finder.models import Hotel
+from hotel_finder.models import GeoPoint, Hotel
 from hotel_finder.providers.base import HotelProvider
 from hotel_finder.providers.registry import get_providers
 from hotel_finder.scoring import make_scorer
@@ -32,21 +39,36 @@ from hotel_finder.stages.shortlist import shortlist
 logger = logging.getLogger(__name__)
 
 
-async def recommend(query: HotelQuery, settings: Settings | None = None) -> Recommendations:
-    """Produce lens-projected hotel recommendations for ``query``."""
+async def search(
+    request: HotelSearchRequest, settings: Settings | None = None
+) -> HotelSearchResponse:
+    """Run the pipeline for ``request`` and return a ``HotelSearchResponse`` envelope."""
     settings = settings or Settings()
-    providers = get_providers(settings.enabled_providers)
+    warnings: list[str] = []
 
-    candidates = await _gather(providers, query)
+    resolved = _resolve(request, warnings)
+    context = SearchContext(
+        center=resolved.center,
+        desired_area=request.place.desired_area,
+        location_label=request.place.city or request.place.text,
+        filters=request.filters,
+    )
+
+    providers = get_providers(settings.enabled_providers)
+    candidates = await _gather(providers, request, warnings)
     candidates = dedupe(candidates)
     candidates_found = len(candidates)
     candidates = [_with_price_band(h, settings) for h in candidates]
 
-    filtered, widened = _filter_with_widening(candidates, query, settings)
-    short = shortlist(filtered, query, settings.shortlist_size)
+    filtered, widened = _filter_with_widening(candidates, request, resolved.center, settings)
+    short = shortlist(filtered, context, settings.shortlist_size)
 
     scorer = make_scorer(settings)
-    scored = await scorer.score(short, query)
+    scored = await scorer.score(short, context)
+
+    offers_by_id = {s.hotel.id: _offers_for(s.hotel, request) for s in scored}
+    lenses_out = _build_lenses(scored, request, offers_by_id)
+    _apply_budget_fallback(lenses_out, request, candidates, warnings)
 
     meta = RecommendationMeta(
         providers_used=[p.name for p in providers],
@@ -56,23 +78,58 @@ async def recommend(query: HotelQuery, settings: Settings | None = None) -> Reco
         scorer=settings.scorer,
         widened=widened,
     )
-    return Recommendations(
-        query_id=query.id,
-        lenses=_build_lenses(scored, query),
+    return HotelSearchResponse(
+        request_id=request.request_id,
+        status=_status(lenses_out, warnings),
+        warnings=warnings,
+        resolved=resolved,
+        lenses=lenses_out,
         meta=meta,
     )
 
 
-async def _gather(providers: list[HotelProvider], query: HotelQuery) -> list[Hotel]:
-    """Fan out to providers in parallel; a provider that errors is logged and skipped."""
+def search_sync(
+    request: HotelSearchRequest, settings: Settings | None = None
+) -> HotelSearchResponse:
+    """Blocking convenience wrapper around :func:`search` for non-async callers.
+
+    Not usable from inside a running event loop (use ``await search(...)`` there).
+    """
+    return asyncio.run(search(request, settings))
+
+
+def _resolve(request: HotelSearchRequest, warnings: list[str]) -> ResolvedQuery:
+    """Resolve ``Place`` into what the pipeline searched. Structured passthrough for M1a;
+    geocoding of free-text places lands in M1c (until then, warn and proceed broadly)."""
+    place = request.place
+    if place.center is None and not place.city and place.text:
+        warnings.append(
+            f"free-text place {place.text!r} was not geocoded (not yet supported); "
+            "results may be broad"
+        )
+    stay = request.stay
+    return ResolvedQuery(
+        center=place.center,
+        city=place.city,
+        check_in=stay.check_in if stay else None,
+        check_out=stay.check_out if stay else None,
+        currency=stay.currency if stay else None,
+    )
+
+
+async def _gather(
+    providers: list[HotelProvider], request: HotelSearchRequest, warnings: list[str]
+) -> list[Hotel]:
+    """Fan out to providers in parallel; a provider that errors warns and is skipped, not fatal."""
     results = await asyncio.gather(
-        *(provider.search(query) for provider in providers),
+        *(provider.search(request) for provider in providers),
         return_exceptions=True,
     )
     hotels: list[Hotel] = []
     for provider, result in zip(providers, results, strict=True):
         if isinstance(result, BaseException):
             logger.warning("provider %s failed: %s", provider.name, result)
+            warnings.append(f"provider {provider.name} unavailable: {result}")
             continue
         hotels.extend(result)
     return hotels
@@ -86,22 +143,39 @@ def _with_price_band(hotel: Hotel, settings: Settings) -> Hotel:
     return hotel
 
 
-def _filter_with_widening(
-    candidates: list[Hotel], query: HotelQuery, settings: Settings
-) -> tuple[list[Hotel], bool]:
-    """Hard-filter; if too few survive, relax soft constraints with a capped retry.
-
-    Must-have amenities are never relaxed (they're hard by definition). Widening grows the area
-    radius and, on later steps, drops the price bounds. This is a fixed loop with a cap, not the
-    LLM choosing its next move.
-    """
-    base = FilterCriteria(
-        must_have_amenities=frozenset(query.must_have_amenities),
-        price_min=query.price_min,
-        price_max=query.price_max,
-        center=query.center,
-        radius_km=settings.widen_radius_km if query.center is not None else None,
+def _base_criteria(
+    request: HotelSearchRequest, center: GeoPoint | None, settings: Settings
+) -> FilterCriteria:
+    filters = request.filters
+    radius = None
+    if center is not None:
+        radius = request.place.radius_km
+        if radius is None:
+            radius = settings.widen_radius_km
+    return FilterCriteria(
+        must_have_amenities=frozenset(filters.must_have_amenities),
+        price_min=filters.price_min,
+        price_max=filters.price_max,
+        min_star=filters.min_star,
+        min_guest_rating=filters.min_guest_rating,
+        center=center,
+        radius_km=radius,
     )
+
+
+def _filter_with_widening(
+    candidates: list[Hotel],
+    request: HotelSearchRequest,
+    center: GeoPoint | None,
+    settings: Settings,
+) -> tuple[list[Hotel], bool]:
+    """Hard-filter; if too few survive, relax **soft** constraints with a capped retry.
+
+    Must-have amenities and quality bounds (min_star / min_guest_rating) are never relaxed.
+    Widening grows the area radius (step 0) and then drops the price bounds (step 1+). This is a
+    fixed loop with a cap, not the LLM choosing its next move.
+    """
+    base = _base_criteria(request, center, settings)
     filtered = hard_filter(candidates, base)
     if len(filtered) >= settings.min_candidates:
         return filtered, False
@@ -114,6 +188,8 @@ def _filter_with_widening(
             must_have_amenities=base.must_have_amenities,
             price_min=base.price_min if step == 0 else None,
             price_max=base.price_max if step == 0 else None,
+            min_star=base.min_star,
+            min_guest_rating=base.min_guest_rating,
             center=base.center,
             radius_km=radius,
         )
@@ -123,10 +199,95 @@ def _filter_with_widening(
     return filtered, True
 
 
-def _build_lenses(scored: list[ScoredHotel], query: HotelQuery) -> dict[LensName, list[Pick]]:
-    k = query.picks_per_lens
-    return {
-        LensName.STRATIFIED_BEST: to_picks(lenses.stratified_best(scored, per_band=1)),
-        LensName.OVERALL_STANDOUTS: to_picks(lenses.overall_standouts(scored, k)),
-        LensName.HIDDEN_GEMS: to_picks(lenses.hidden_gems(scored, k)),
-    }
+def _offers_for(hotel: Hotel, request: HotelSearchRequest) -> list[RateOffer]:
+    """Build read-only offers for a hotel. Content-only (no ``stay``) yields no offers.
+
+    M1a derives a single offer from the provider's ``price_per_night``; the LiteAPI provider (M1b)
+    replaces this with real cheapest-refundable / cheapest-non-refundable rates.
+    """
+    stay = request.stay
+    if stay is None or hotel.price_per_night is None:
+        return []
+    nights = (stay.check_out - stay.check_in).days
+    per_night = hotel.price_per_night
+    price_max = request.filters.price_max
+    offer = RateOffer(
+        total=round(per_night * nights, 2),
+        currency=hotel.currency or stay.currency,
+        per_night=per_night,
+        board=None,
+        refundable=True,  # mock has no cancellation data; real refundability arrives in M1b
+        over_budget=price_max is not None and per_night > price_max,
+    )
+    # Respect an explicit refundable filter (mostly moot until real rate kinds exist in M1b).
+    if request.filters.refundable is not None and offer.refundable != request.filters.refundable:
+        return []
+    return [offer]
+
+
+def _build_lenses(
+    scored: list[ScoredHotel],
+    request: HotelSearchRequest,
+    offers_by_id: dict[str, list[RateOffer]],
+) -> dict[LensName, list[Pick]]:
+    k = request.picks_per_lens
+    wanted = request.lenses if request.lenses is not None else list(LensName)
+    out: dict[LensName, list[Pick]] = {}
+    if LensName.STRATIFIED_BEST in wanted:
+        out[LensName.STRATIFIED_BEST] = to_picks(
+            lenses.stratified_best(scored, per_band=1), offers_by_id
+        )
+    if LensName.OVERALL_STANDOUTS in wanted:
+        out[LensName.OVERALL_STANDOUTS] = to_picks(
+            lenses.overall_standouts(scored, k), offers_by_id
+        )
+    if LensName.HIDDEN_GEMS in wanted:
+        out[LensName.HIDDEN_GEMS] = to_picks(lenses.hidden_gems(scored, k), offers_by_id)
+    return out
+
+
+def _apply_budget_fallback(
+    lenses_out: dict[LensName, list[Pick]],
+    request: HotelSearchRequest,
+    candidates: list[Hotel],
+    warnings: list[str],
+) -> None:
+    """If the returned picks include over-budget hotels (only possible once price widening kicked
+    in), record the budget-too-low fallback: warn with the price floor. Offers are already flagged
+    ``over_budget`` in :func:`_offers_for`."""
+    price_max = request.filters.price_max
+    if price_max is None:
+        return
+    picked = {pick.hotel.id: pick.hotel for picks in lenses_out.values() for pick in picks}
+    over = [
+        h
+        for h in picked.values()
+        if h.price_per_night is not None and h.price_per_night > price_max
+    ]
+    if not over:
+        return
+    prices = [h.price_per_night for h in candidates if h.price_per_night is not None]
+    if not prices:
+        return
+    currency = _dominant_currency(request, candidates)
+    warnings.append(
+        f"no hotels within {currency} {price_max:.0f}/night; "
+        f"cheapest is {currency} {min(prices):.0f}/night"
+    )
+
+
+def _dominant_currency(request: HotelSearchRequest, candidates: list[Hotel]) -> str:
+    if request.stay is not None:
+        return request.stay.currency
+    seen = Counter(h.currency for h in candidates if h.currency)
+    if seen:
+        return seen.most_common(1)[0][0]
+    return "EUR"
+
+
+def _status(
+    lenses_out: dict[LensName, list[Pick]], warnings: list[str]
+) -> Literal["ok", "empty", "degraded"]:
+    if not any(picks for picks in lenses_out.values()):
+        return "empty"
+    return "degraded" if warnings else "ok"

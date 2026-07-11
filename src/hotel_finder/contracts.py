@@ -1,7 +1,13 @@
-"""The agent's request/response contract.
+"""The submodule's request/response contract (`contracts.py`).
 
-This is the stable surface the future orchestrator and the data-provider adapters hang off of,
-so it's deliberately small and explicit. ``HotelQuery`` in, ``Recommendations`` out.
+The stable typed surface this repo exposes **as a git submodule** to an orchestrator agent:
+``HotelSearchRequest`` in, ``HotelSearchResponse`` out, via the ``search`` entry point in
+``pipeline.py``. Built on the domain types in ``models.py``.
+
+The Pydantic v2 models are both the contract **and** the shared validator: the orchestrator
+imports ``HotelSearchRequest`` and constructs it on its own side, so a malformed request raises
+``pydantic.ValidationError`` at construction, before ``search()`` is ever entered. During work the
+agent never raises for a data outcome; problems become ``warnings`` + ``status`` on the response.
 """
 
 from __future__ import annotations
@@ -9,6 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -16,8 +23,7 @@ from hotel_finder.models import Amenity, GeoPoint, Hotel
 
 
 class Intent(StrEnum):
-    """What kind of request this is. Modeled as a first-class field so intent-specific
-    params can hang off it; today only ZONE is fully handled."""
+    """What kind of request this is. Only ZONE is fully handled today."""
 
     ZONE = "zone"  # "find me somewhere in this area" — broad search, then organize
     ANCHOR = "anchor"  # "I heard X is good" — peers of a named hotel (reserved for later)
@@ -31,48 +37,127 @@ class LensName(StrEnum):
     HIDDEN_GEMS = "hidden_gems"
 
 
-class HotelQuery(BaseModel):
-    """A structured hotel-search request (free-text parsing is out of scope for v1)."""
+# --- request ---------------------------------------------------------------------------------
+
+
+class Occupancy(BaseModel):
+    """Guests for one room."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    location: str  # city or area name, e.g. "Barcelona"
-    intent: Intent = Intent.ZONE
+    adults: int = Field(default=2, ge=1)
+    children_ages: list[int] = Field(default_factory=list)
 
-    center: GeoPoint | None = None  # measure distance from here
-    desired_area: str | None = None  # preferred neighborhood/district
-    anchor_hotel: str | None = None  # for ANCHOR intent (reserved)
 
-    check_in: date | None = None
-    check_out: date | None = None
-    guests: int | None = Field(default=None, ge=1)
+class Place(BaseModel):
+    """Where to search. Accepts structured fields **and** free text; structured wins when present,
+    ``text`` is the fallback the pipeline geocodes (see ``data-sources.md``). At least one usable
+    path (``city``, ``center``, or ``text``) is required."""
 
-    must_have_amenities: set[Amenity] = Field(default_factory=set)
-    price_min: float | None = Field(default=None, ge=0.0)
-    price_max: float | None = Field(default=None, ge=0.0)
+    model_config = ConfigDict(extra="forbid")
 
-    picks_per_lens: int = Field(default=3, ge=1)
+    country_code: str | None = None  # ISO-3166-1 alpha-2, e.g. "ES"
+    city: str | None = None
+    center: GeoPoint | None = None  # precise "near this point"
+    radius_km: float | None = Field(default=5.0, ge=0.0)  # only meaningful with center
+    text: str | None = None  # free-text place name, geocoded when structured fields are absent
+    desired_area: str | None = None  # neighborhood bias for ranking, not a hard filter
 
     @model_validator(mode="after")
-    def _validate_ranges(self) -> HotelQuery:
+    def _at_least_one_path(self) -> Place:
+        if self.center is None and not self.city and not self.text:
+            raise ValueError("Place requires one of: city (with country_code), center, or text")
+        return self
+
+
+class Stay(BaseModel):
+    """Dates + occupancy, needed for real prices. Omit for content-only (no live rates)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    check_in: date
+    check_out: date
+    rooms: list[Occupancy] = Field(default_factory=lambda: [Occupancy()])
+    guest_nationality: str = "US"  # affects rates upstream
+    currency: str = "EUR"
+
+    @model_validator(mode="after")
+    def _validate_dates(self) -> Stay:
+        if self.check_in >= self.check_out:
+            raise ValueError("check_in must be before check_out")
+        return self
+
+
+class Filters(BaseModel):
+    """Hard and soft constraints the pipeline applies. Absent fields are no-ops."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    price_min: float | None = Field(default=None, ge=0.0)  # per-night
+    price_max: float | None = Field(default=None, ge=0.0)  # per-night
+    min_star: int | None = Field(default=None, ge=1, le=5)  # hotel class
+    min_guest_rating: float | None = Field(default=None, ge=0.0, le=10.0)  # guest score 0-10
+    refundable: bool | None = None  # None returns both kinds; True/False restricts
+    must_have_amenities: set[Amenity] = Field(default_factory=set)
+    property_types: set[str] = Field(default_factory=set)  # empty = all lodging types
+
+    @model_validator(mode="after")
+    def _validate_price_range(self) -> Filters:
         if (
             self.price_min is not None
             and self.price_max is not None
             and self.price_min > self.price_max
         ):
             raise ValueError("price_min must be <= price_max")
-        if (
-            self.check_in is not None
-            and self.check_out is not None
-            and self.check_in >= self.check_out
-        ):
-            raise ValueError("check_in must be before check_out")
         return self
 
 
+class HotelSearchRequest(BaseModel):
+    """A structured hotel-search request. ``extra="forbid"`` fails fast on an orchestrator typo
+    (safe because the submodule is commit-pinned)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    place: Place
+    stay: Stay | None = None
+    intent: Intent = Intent.ZONE
+    anchor_hotel: str | None = None  # for ANCHOR intent (reserved)
+    filters: Filters = Field(default_factory=Filters)
+    lenses: list[LensName] | None = None  # None means all three
+    picks_per_lens: int = Field(default=3, ge=1)
+
+
+# --- response --------------------------------------------------------------------------------
+
+
+class RateOffer(BaseModel):
+    """Read-only price information for one rate. No booking token in M1 (booking deferred)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total: float = Field(ge=0.0)  # stay total
+    currency: str
+    per_night: float | None = Field(default=None, ge=0.0)
+    board: str | None = None  # e.g. "Room Only", "Breakfast Included"
+    refundable: bool
+    over_budget: bool = False  # only True in the budget-too-low fallback (see pipeline)
+
+
+class ResolvedQuery(BaseModel):
+    """What was **actually** searched, so the orchestrator can reason about the result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    center: GeoPoint | None = None
+    city: str | None = None
+    check_in: date | None = None
+    check_out: date | None = None
+    currency: str | None = None
+
+
 class Pick(BaseModel):
-    """One recommended hotel within a lens, with its score and a human-readable rationale."""
+    """One recommended hotel within a lens, with its score, rationale, and priced offers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -82,6 +167,7 @@ class Pick(BaseModel):
     rationale: str = ""
     # Surfaced explicitly (mirrors hotel.location) so the itinerary agent can plan around it.
     coordinates: GeoPoint | None = None
+    offers: list[RateOffer] = Field(default_factory=list)
 
 
 class RecommendationMeta(BaseModel):
@@ -93,15 +179,18 @@ class RecommendationMeta(BaseModel):
     candidates_found: int = 0
     candidates_after_filter: int = 0
     shortlisted: int = 0
-    scorer: str = "heuristic"
+    scorer: str = "heuristic"  # the scorer that actually ran (see scoring.md)
     widened: bool = False
 
 
-class Recommendations(BaseModel):
-    """The agent's response: lens-projected picks over one scored candidate set."""
+class HotelSearchResponse(BaseModel):
+    """A result envelope: partial results and problems are data to read, not exceptions to catch."""
 
     model_config = ConfigDict(extra="forbid")
 
-    query_id: str  # echoes HotelQuery.id
+    request_id: str  # echoes the request
+    status: Literal["ok", "empty", "degraded"] = "ok"
+    warnings: list[str] = Field(default_factory=list)
+    resolved: ResolvedQuery = Field(default_factory=ResolvedQuery)
     lenses: dict[LensName, list[Pick]] = Field(default_factory=dict)
     meta: RecommendationMeta = Field(default_factory=RecommendationMeta)

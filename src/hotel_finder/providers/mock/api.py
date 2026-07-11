@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from importlib import resources
 
-from hotel_finder.contracts import HotelQuery
+from hotel_finder.contracts import HotelSearchRequest
 from hotel_finder.providers.base import RawRecord
 
 _FIXTURES_PACKAGE = "hotel_finder.providers.mock.fixtures"
@@ -21,8 +21,8 @@ class MockApi:
     def __init__(self, dataset: str = "barcelona") -> None:
         self._dataset = dataset
 
-    async def fetch(self, query: HotelQuery) -> list[RawRecord]:
-        # A real provider would use `query` to build a network request. The mock ignores it and
+    async def fetch(self, request: HotelSearchRequest) -> list[RawRecord]:
+        # A real provider would use `request` to build a network request. The mock ignores it and
         # always returns its fixture city; the pipeline's filter/area logic does the rest.
         return self._load(self._dataset)
 

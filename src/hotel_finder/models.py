@@ -113,9 +113,9 @@ class Hotel(BaseModel):
     currency: str | None = None
     price_band: PriceBand | None = None
 
-    rating: float | None = Field(default=None, ge=0.0, le=5.0)
+    rating: float | None = Field(default=None, ge=0.0, le=10.0)  # guest score, booking.com style
     review_count: int | None = Field(default=None, ge=0)
-    star_rating: int | None = Field(default=None, ge=1, le=5)
+    star_rating: int | None = Field(default=None, ge=1, le=5)  # hotel class
 
     amenities: set[Amenity] = Field(default_factory=set)
     url: str | None = None

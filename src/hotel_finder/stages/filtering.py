@@ -20,6 +20,8 @@ class FilterCriteria:
     must_have_amenities: frozenset[Amenity] = frozenset()
     price_min: float | None = None
     price_max: float | None = None
+    min_star: int | None = None
+    min_guest_rating: float | None = None  # guest score, 0-10
     center: GeoPoint | None = None
     radius_km: float | None = None  # area bound around ``center``; None = unbounded
 
@@ -36,6 +38,16 @@ def passes(hotel: Hotel, criteria: FilterCriteria) -> bool:
         return False
     if criteria.price_max is not None and (
         hotel.price_per_night is None or hotel.price_per_night > criteria.price_max
+    ):
+        return False
+
+    # Quality bounds: unknown star / rating can't be confirmed to fit, so exclude when a bound set.
+    if criteria.min_star is not None and (
+        hotel.star_rating is None or hotel.star_rating < criteria.min_star
+    ):
+        return False
+    if criteria.min_guest_rating is not None and (
+        hotel.rating is None or hotel.rating < criteria.min_guest_rating
     ):
         return False
 

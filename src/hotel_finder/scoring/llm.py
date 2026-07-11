@@ -16,7 +16,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hotel_finder.config import Settings
-from hotel_finder.contracts import HotelQuery
+from hotel_finder.context import SearchContext
 from hotel_finder.models import Hotel
 from hotel_finder.scoring.base import HotelScorer, ScoredHotel, overall_score
 from hotel_finder.scoring.heuristic import HeuristicScorer
@@ -85,34 +85,36 @@ class LLMScorer:
             timeout=settings.llm_timeout,
         )
 
-    async def score(self, hotels: list[Hotel], query: HotelQuery) -> list[ScoredHotel]:
+    async def score(self, hotels: list[Hotel], context: SearchContext) -> list[ScoredHotel]:
         if not hotels:
             return []
         if not self._settings.llm_api_key:
             logger.warning("no LLM_API_KEY set; using heuristic scorer")
-            return await self._fallback.score(hotels, query)
+            return await self._fallback.score(hotels, context)
 
         try:
-            items = await self._request_scores(hotels, query)
+            items = await self._request_scores(hotels, context)
         except Exception as exc:  # noqa: BLE001 — any failure should degrade, not crash
             logger.warning("LLM scoring failed (%s); falling back to heuristic", exc)
-            return await self._fallback.score(hotels, query)
+            return await self._fallback.score(hotels, context)
 
         by_id = {item.id: item for item in items}
         if any(hotel.id not in by_id for hotel in hotels):
             logger.warning("LLM response omitted some hotels; falling back to heuristic")
-            return await self._fallback.score(hotels, query)
+            return await self._fallback.score(hotels, context)
 
         return [_to_scored(hotel, by_id[hotel.id]) for hotel in hotels]
 
-    async def _request_scores(self, hotels: list[Hotel], query: HotelQuery) -> list[_LLMItem]:
+    async def _request_scores(
+        self, hotels: list[Hotel], context: SearchContext
+    ) -> list[_LLMItem]:
         payload = {
             "query": {
-                "location": query.location,
-                "desired_area": query.desired_area,
-                "must_have_amenities": sorted(a.value for a in query.must_have_amenities),
-                "price_min": query.price_min,
-                "price_max": query.price_max,
+                "location": context.location_label,
+                "desired_area": context.desired_area,
+                "must_have_amenities": sorted(a.value for a in context.filters.must_have_amenities),
+                "price_min": context.filters.price_min,
+                "price_max": context.filters.price_max,
             },
             "hotels": [_hotel_payload(h) for h in hotels],
         }

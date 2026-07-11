@@ -11,7 +11,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from hotel_finder.contracts import HotelQuery
+from hotel_finder.context import SearchContext
 from hotel_finder.models import Hotel
 
 
@@ -29,7 +29,7 @@ class ScoredHotel(BaseModel):
 class HotelScorer(Protocol):
     """Scores a shortlist on the fuzzy axes. Called exactly once per request."""
 
-    async def score(self, hotels: list[Hotel], query: HotelQuery) -> list[ScoredHotel]: ...
+    async def score(self, hotels: list[Hotel], context: SearchContext) -> list[ScoredHotel]: ...
 
 
 def overall_score(value: float, location: float, character: float) -> float:

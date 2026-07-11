@@ -26,6 +26,19 @@ def test_unknown_price_excluded_when_bound_set(make_hotel: Callable[..., Hotel])
     assert not passes(hotel, FilterCriteria(price_max=150.0))
 
 
+def test_min_star_and_guest_rating_bounds(make_hotel: Callable[..., Hotel]) -> None:
+    hotel = make_hotel(star_rating=4, rating=8.5)  # rating is 0-10
+    assert passes(hotel, FilterCriteria(min_star=4, min_guest_rating=8.0))
+    assert not passes(hotel, FilterCriteria(min_star=5))
+    assert not passes(hotel, FilterCriteria(min_guest_rating=9.0))
+
+
+def test_unknown_star_or_rating_excluded_when_bound_set(make_hotel: Callable[..., Hotel]) -> None:
+    hotel = make_hotel(star_rating=None, rating=None)
+    assert not passes(hotel, FilterCriteria(min_star=3))
+    assert not passes(hotel, FilterCriteria(min_guest_rating=7.0))
+
+
 def test_area_radius(make_hotel: Callable[..., Hotel]) -> None:
     center = GeoPoint(lat=41.3874, lon=2.1686)
     near = make_hotel(id="near", location=GeoPoint(lat=41.388, lon=2.169))

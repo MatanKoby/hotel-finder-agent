@@ -7,7 +7,7 @@ makes the whole pipeline unit-testable and evaluable at $0.
 
 from __future__ import annotations
 
-from hotel_finder.contracts import HotelQuery
+from hotel_finder.context import SearchContext
 from hotel_finder.models import Hotel
 from hotel_finder.scoring.base import ScoredHotel, overall_score
 from hotel_finder.utils.geo import haversine
@@ -22,7 +22,7 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 
 
 def _value(hotel: Hotel, min_price: float, price_spread: float) -> float:
-    rating_norm = (hotel.rating or 0.0) / 5.0
+    rating_norm = (hotel.rating or 0.0) / 10.0
     if hotel.price_per_night is None or price_spread <= 0:
         affordability = 0.5
     else:
@@ -31,11 +31,11 @@ def _value(hotel: Hotel, min_price: float, price_spread: float) -> float:
     return _clamp(0.7 * rating_norm + 0.3 * affordability)
 
 
-def _location(hotel: Hotel, query: HotelQuery) -> float:
-    if query.center is not None and hotel.location is not None:
-        return _clamp(1.0 - haversine(hotel.location, query.center) / _FAR_KM)
-    if query.desired_area and hotel.area:
-        in_area = normalize_text(query.desired_area) in normalize_text(hotel.area)
+def _location(hotel: Hotel, context: SearchContext) -> float:
+    if context.center is not None and hotel.location is not None:
+        return _clamp(1.0 - haversine(hotel.location, context.center) / _FAR_KM)
+    if context.desired_area and hotel.area:
+        in_area = normalize_text(context.desired_area) in normalize_text(hotel.area)
         return 1.0 if in_area else 0.5
     return 0.6  # neutral when there's no location signal to go on
 
@@ -48,7 +48,7 @@ def _character(hotel: Hotel) -> float:
 
 
 def _gem_signal(hotel: Hotel, value: float) -> float:
-    rating_factor = _clamp(((hotel.rating or 0.0) - 4.0) / 1.0)  # 0 at 4.0, 1 at 5.0
+    rating_factor = _clamp(((hotel.rating or 0.0) - 8.0) / 2.0)  # 0 at 8.0, 1 at 10.0
     if hotel.review_count is None:
         scarcity = 0.5
     else:
@@ -64,7 +64,7 @@ def _rationale(hotel: Hotel, subscores: dict[str, float]) -> str:
             price = f"€{hotel.price_per_night:.0f}/night"
         else:
             price = "price n/a"
-        bits.append(f"rated {hotel.rating}/5 at {price}")
+        bits.append(f"rated {hotel.rating}/10 at {price}")
     if hotel.area:
         bits.append(f"in {hotel.area}")
     if subscores["gem_signal"] >= 0.5:
@@ -79,7 +79,7 @@ def _rationale(hotel: Hotel, subscores: dict[str, float]) -> str:
 class HeuristicScorer:
     """Scores hotels with a deterministic formula over their structured fields."""
 
-    async def score(self, hotels: list[Hotel], query: HotelQuery) -> list[ScoredHotel]:
+    async def score(self, hotels: list[Hotel], context: SearchContext) -> list[ScoredHotel]:
         prices = [h.price_per_night for h in hotels if h.price_per_night is not None]
         min_price = min(prices) if prices else 0.0
         price_spread = (max(prices) - min_price) if prices else 0.0
@@ -87,7 +87,7 @@ class HeuristicScorer:
         scored: list[ScoredHotel] = []
         for hotel in hotels:
             value = _value(hotel, min_price, price_spread)
-            location = _location(hotel, query)
+            location = _location(hotel, context)
             character = _character(hotel)
             gem = _gem_signal(hotel, value)
             subscores = {
