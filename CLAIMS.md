@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
+- Owner: claude
+- Started: 2026-07-12 05:57
+
 ## Completed
 
 ### Batch M1e — Integration surface + minimal orchestrator example
