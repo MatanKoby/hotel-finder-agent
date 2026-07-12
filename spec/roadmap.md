@@ -73,8 +73,8 @@ catalogued in `data-sources.md` → Future direction and to be broken into batch
   `offerId`, but M1 (and v1) is read-only recommendation. Noted for the future in
   `data-sources.md` → LiteAPI. Out of scope now.
 - **The orchestration layer** above the three agents (still external).
-- Optional: make `meta.scorer` report the scorer that actually ran (vs configured) on LLM
-  fallback (see `contract.md` → `RecommendationMeta`).
+- Optional: make `diagnostics.scorer` report the scorer that actually ran (vs configured) on LLM
+  fallback (see `contract.md` → `Diagnostics`).
 - Optional: richer per-lens rationales in `explain.py` (lens-aware phrasing).
 
 ## Open considerations to revisit
