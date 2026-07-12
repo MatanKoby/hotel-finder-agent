@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 
 from hotel_finder.config import Settings
@@ -24,20 +25,22 @@ async def test_end_to_end_produces_all_lenses() -> None:
     response = await search(request, _settings())
 
     assert response.request_id == request.request_id
-    assert response.status == "ok"
+    assert response.agent_status == "ok"
     assert response.warnings == []
-    assert response.meta.candidates_found == 14
-    assert response.meta.scorer == "heuristic"
-    assert response.meta.widened is False
+    assert response.diagnostics.candidates_found == 14
+    assert response.diagnostics.scorer == "heuristic"
+    assert response.diagnostics.widened is False
 
     for lens in LensName:
         assert lens in response.lenses
 
-    gem_ids = [p.hotel.id for p in response.lenses[LensName.HIDDEN_GEMS]]
-    assert "bcn-011" in gem_ids  # the planted hidden gem surfaces
+    gem_names = [p.name for p in response.lenses[LensName.HIDDEN_GEMS]]
+    assert "Gothic Quiet Courtyard" in gem_names  # the planted hidden gem (bcn-011) surfaces
 
-    bands = {p.hotel.price_band for p in response.lenses[LensName.STRATIFIED_BEST]}
-    assert len(bands) >= 3  # coverage across price tiers
+    # stratified_best returns one per price band, so distinct picks == coverage across tiers.
+    stratified = response.lenses[LensName.STRATIFIED_BEST]
+    assert len(stratified) >= 3
+    assert len({p.name for p in stratified}) == len(stratified)
 
     # Coordinates are surfaced for the downstream itinerary agent.
     assert all(p.coordinates is not None for p in response.lenses[LensName.OVERALL_STANDOUTS])
@@ -61,14 +64,15 @@ async def test_offers_present_with_stay_within_budget() -> None:
     )
     response = await search(request, _settings())
 
-    assert response.status == "ok"
+    assert response.agent_status == "ok"
     priced = [p for picks in response.lenses.values() for p in picks if p.offers]
     assert priced  # at least some picks carry offers
     for pick in priced:
         offer = pick.offers[0]
         assert offer.over_budget is False
-        assert offer.per_night == pick.hotel.price_per_night
-        assert offer.total == round(pick.hotel.price_per_night * 3, 2)
+        assert offer.per_night == pick.price_per_night
+        assert pick.price_per_night is not None
+        assert offer.total == round(pick.price_per_night * 3, 2)
 
 
 async def test_budget_too_low_fallback_degrades_and_flags_offers() -> None:
@@ -77,8 +81,8 @@ async def test_budget_too_low_fallback_degrades_and_flags_offers() -> None:
     )
     response = await search(request, _settings(min_candidates=8))
 
-    assert response.meta.widened is True
-    assert response.status == "degraded"
+    assert response.diagnostics.widened is True
+    assert response.agent_status == "degraded"
     assert any("within EUR 62" in w for w in response.warnings)
 
     all_offers = [o for picks in response.lenses.values() for p in picks for o in p.offers]
@@ -90,9 +94,9 @@ async def test_bounded_agency_widening_content_only() -> None:
     request = HotelSearchRequest(place=Place(city="Barcelona"), filters=Filters(price_max=62.0))
     response = await search(request, _settings(min_candidates=8))
 
-    assert response.meta.widened is True
-    assert response.meta.candidates_after_filter >= 8
-    assert response.status == "degraded"  # over-budget hotels surfaced
+    assert response.diagnostics.widened is True
+    assert response.diagnostics.candidates_after_filter >= 8
+    assert response.agent_status == "degraded"  # over-budget hotels surfaced
 
 
 async def test_lenses_subset_is_honored() -> None:
@@ -109,8 +113,8 @@ async def test_llm_without_credentials_reports_heuristic_fallback() -> None:
     request = HotelSearchRequest(place=Place(city="Barcelona"))
     response = await search(request, _settings(scorer="llm"))
 
-    assert response.meta.scorer == "heuristic"
-    assert response.status == "degraded"
+    assert response.diagnostics.scorer == "heuristic"
+    assert response.agent_status == "degraded"
     assert any("heuristic" in w for w in response.warnings)
 
 
@@ -120,3 +124,21 @@ def test_search_sync_returns_envelope() -> None:
 
     assert response.request_id == request.request_id
     assert response.lenses
+
+
+async def test_pick_score_normalized_and_stable_across_lenses() -> None:
+    request = HotelSearchRequest(place=Place(city="Barcelona"))
+    response = await search(request, _settings())
+
+    all_picks = [p for picks in response.lenses.values() for p in picks]
+    assert all_picks
+    assert all(0.0 <= p.score <= 1.0 for p in all_picks)  # Pick.score is Field(ge=0, le=1)
+
+    # A hotel that surfaces in more than one lens carries the *same* overall score each time:
+    # lenses differ in selection, not scale (no per-tier re-normalization in stratified_best).
+    counts = Counter(p.name for p in all_picks)
+    multi_lens = [name for name, n in counts.items() if n > 1]
+    assert multi_lens  # at least one hotel appears in multiple lenses
+    for name in multi_lens:
+        scores = {p.score for p in all_picks if p.name == name}
+        assert len(scores) == 1  # identical score across lenses

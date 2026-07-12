@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from hotel_finder.models import Amenity, GeoPoint, Hotel
+from hotel_finder.models import Amenity, GeoPoint
 
 
 class Intent(StrEnum):
@@ -77,9 +77,11 @@ class Stay(BaseModel):
 
     check_in: date
     check_out: date
-    rooms: list[Occupancy] = Field(default_factory=lambda: [Occupancy()])
-    guest_nationality: str = "US"  # affects rates upstream
     currency: str = "EUR"
+    rooms: list[Occupancy] | None = None
+    """Per-room occupancy override. ``None`` derives a single room from ``request.guests``; a set
+    value **overrides** ``guests`` (multi-room bookings). ``guest_nationality`` is **not** here: it
+    is trip-level (``request.guest_nationality``), a traveler attribute shared with siblings."""
 
     @model_validator(mode="after")
     def _validate_dates(self) -> Stay:
@@ -121,11 +123,15 @@ class HotelSearchRequest(BaseModel):
     request_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     place: Place
     stay: Stay | None = None
-    intent: Intent = Intent.ZONE
-    anchor_hotel: str | None = None  # for ANCHOR intent (reserved)
+    guests: Occupancy = Field(default_factory=Occupancy)  # trip-level occupancy
+    guest_nationality: str = "US"  # trip-level traveler attribute; affects rates upstream
     filters: Filters = Field(default_factory=Filters)
     lenses: list[LensName] | None = None  # None means all three
     picks_per_lens: int = Field(default=3, ge=1)
+    # intent / anchor_hotel are not part of the M1 wire contract; they carry inert defaults so the
+    # wire shape is stable whether or not the orchestrator sets them (re-documented in Batch P3).
+    intent: Intent = Intent.ZONE
+    anchor_hotel: str | None = None  # for ANCHOR intent (reserved)
 
 
 # --- response --------------------------------------------------------------------------------
@@ -151,26 +157,43 @@ class ResolvedQuery(BaseModel):
 
     center: GeoPoint | None = None
     city: str | None = None
+    area: str | None = None  # neighborhood the search biased toward (echoes place.desired_area)
     check_in: date | None = None
     check_out: date | None = None
     currency: str | None = None
 
 
 class Pick(BaseModel):
-    """One recommended hotel within a lens, with its score, rationale, and priced offers."""
+    """One recommended hotel within a lens: **flat**, rendering-ready.
+
+    No nested ``hotel`` — the fields the orchestrator renders and reasons over are promoted to the
+    top level; internal-only fields (``raw``, full ``sources``) stay off the wire. ``score`` is the
+    single overall score (``0..1``), the **same** value in every lens (lenses differ in selection,
+    not scale), so ``stratified_best`` must not re-normalize within a price tier.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    hotel: Hotel
-    score: float
-    subscores: dict[str, float] = Field(default_factory=dict)
+    name: str
+    score: float = Field(ge=0.0, le=1.0)  # overall, normalized, comparable across lenses
     rationale: str = ""
-    # Surfaced explicitly (mirrors hotel.location) so the itinerary agent can plan around it.
-    coordinates: GeoPoint | None = None
+    why: dict[str, float] = Field(default_factory=dict)  # structured subscores; scorer-dependent
+    area: str | None = None
+    distance_to_desired_km: float | None = None  # None when no desired_area / center was given
+    price_per_night: float | None = None
+    currency: str | None = None
+    rating: float | None = None  # guest score, 0-10
+    review_count: int | None = None
+    star_rating: int | None = None  # hotel class, 1-5
+    description: str | None = None  # the "character" blurb
+    amenities: set[Amenity] = Field(default_factory=set)
+    coordinates: GeoPoint | None = None  # so the itinerary agent can plan around each hotel
+    image_url: str | None = None  # provider-supplied photo; None for providers/hotels without one
+    url: str | None = None
     offers: list[RateOffer] = Field(default_factory=list)
 
 
-class RecommendationMeta(BaseModel):
+class Diagnostics(BaseModel):
     """Diagnostics about how a recommendation was produced (for debugging/evaluation)."""
 
     model_config = ConfigDict(extra="forbid")
@@ -189,8 +212,9 @@ class HotelSearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: str  # echoes the request
-    status: Literal["ok", "empty", "degraded"] = "ok"
+    # data outcome; the orchestrator owns the outer transport status (see contract.md)
+    agent_status: Literal["ok", "empty", "degraded"] = "ok"
     warnings: list[str] = Field(default_factory=list)
     resolved: ResolvedQuery = Field(default_factory=ResolvedQuery)
     lenses: dict[LensName, list[Pick]] = Field(default_factory=dict)
-    meta: RecommendationMeta = Field(default_factory=RecommendationMeta)
+    diagnostics: Diagnostics = Field(default_factory=Diagnostics)

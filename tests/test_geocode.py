@@ -83,7 +83,7 @@ async def test_geocode_failure_warns_not_crashes(monkeypatch: pytest.MonkeyPatch
 
     assert response.resolved.center is None
     assert any("geocoding" in w.lower() for w in response.warnings)
-    assert response.status == "degraded"
+    assert response.agent_status == "degraded"
 
 
 async def test_geocode_no_result_warns(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -71,17 +71,18 @@ def main() -> None:
 
 
 def _render(response: HotelSearchResponse) -> None:
-    meta = response.meta
+    diag = response.diagnostics
     resolved = response.resolved
     print(
-        f"\nstatus={response.status}  scorer={meta.scorer}  found={meta.candidates_found}  "
-        f"after_filter={meta.candidates_after_filter}  shortlisted={meta.shortlisted}  "
-        f"widened={meta.widened}"
+        f"\nstatus={response.agent_status}  scorer={diag.scorer}  found={diag.candidates_found}  "
+        f"after_filter={diag.candidates_after_filter}  shortlisted={diag.shortlisted}  "
+        f"widened={diag.widened}"
     )
     where = resolved.city or (f"{resolved.center.lat:.3f},{resolved.center.lon:.3f}"
                               if resolved.center else "?")
     dates = f"{resolved.check_in} → {resolved.check_out}" if resolved.check_in else "no dates"
-    print(f"resolved: {where}  |  {dates}  |  {resolved.currency or ''}")
+    area = f"  ({resolved.area})" if resolved.area else ""
+    print(f"resolved: {where}{area}  |  {dates}  |  {resolved.currency or ''}")
     for warning in response.warnings:
         print(f"  ! {warning}")
 
@@ -91,11 +92,10 @@ def _render(response: HotelSearchResponse) -> None:
             print("  (none)")
             continue
         for pick in picks:
-            hotel = pick.hotel
-            band = hotel.price_band.value if hotel.price_band else "?"
-            stars = f"{hotel.star_rating}*" if hotel.star_rating else "?*"
-            rating = f"r={hotel.rating}" if hotel.rating is not None else ""
-            print(f"  • {hotel.name}  [{band}, {stars} {rating}]  score={pick.score:.2f}")
+            where = pick.area or "?"
+            stars = f"{pick.star_rating}*" if pick.star_rating else "?*"
+            rating = f"r={pick.rating}" if pick.rating is not None else ""
+            print(f"  • {pick.name}  [{where}, {stars} {rating}]  score={pick.score:.2f}")
             for offer in pick.offers:
                 flags = "refundable" if offer.refundable else "non-refundable"
                 if offer.over_budget:

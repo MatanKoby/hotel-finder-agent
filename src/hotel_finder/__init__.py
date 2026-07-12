@@ -8,6 +8,7 @@ calling (the Pydantic models are the shared validator).
 
 from hotel_finder.config import Settings
 from hotel_finder.contracts import (
+    Diagnostics,
     Filters,
     HotelSearchRequest,
     HotelSearchResponse,
@@ -17,7 +18,6 @@ from hotel_finder.contracts import (
     Pick,
     Place,
     RateOffer,
-    RecommendationMeta,
     ResolvedQuery,
     Stay,
 )
@@ -27,6 +27,7 @@ from hotel_finder.pipeline import search, search_sync
 __version__ = "0.1.0"
 __all__ = [
     "Amenity",
+    "Diagnostics",
     "Filters",
     "GeoPoint",
     "Hotel",
@@ -39,7 +40,6 @@ __all__ = [
     "Place",
     "PriceBand",
     "RateOffer",
-    "RecommendationMeta",
     "ResolvedQuery",
     "Settings",
     "Stay",

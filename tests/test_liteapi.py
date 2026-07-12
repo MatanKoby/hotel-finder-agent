@@ -117,7 +117,7 @@ class _FakeClient:
     async def data_hotels(self, **kwargs: Any) -> dict[str, Any]:
         return self.payloads["hotels"]
 
-    async def hotels_rates(self, *, hotel_ids: list[str], stay: Stay) -> dict[str, Any]:
+    async def hotels_rates(self, **kwargs: Any) -> dict[str, Any]:
         return self.payloads["rates"]
 
 
@@ -172,13 +172,13 @@ async def test_pipeline_end_to_end_over_liteapi_stub(
     )
     response = await search(request, settings)
 
-    assert response.meta.providers_used == ["liteapi"]
+    assert response.diagnostics.providers_used == ["liteapi"]
     priced = [p for picks in response.lenses.values() for p in picks if p.offers]
     assert priced  # real rates surface as offers on the picks
 
     all_offers = [o for picks in response.lenses.values() for p in picks for o in p.offers]
     assert any(o.over_budget for o in all_offers)
-    assert response.status == "degraded"
+    assert response.agent_status == "degraded"
     assert any("within EUR 90" in w for w in response.warnings)
 
 

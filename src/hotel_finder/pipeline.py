@@ -17,12 +17,12 @@ from typing import Literal
 from hotel_finder.config import Settings
 from hotel_finder.context import SearchContext
 from hotel_finder.contracts import (
+    Diagnostics,
     HotelSearchRequest,
     HotelSearchResponse,
     LensName,
     Pick,
     RateOffer,
-    RecommendationMeta,
     ResolvedQuery,
 )
 from hotel_finder.models import GeoPoint, Hotel
@@ -72,7 +72,7 @@ async def search(
     lenses_out = _build_lenses(scored, request, offers_by_id)
     _apply_budget_fallback(lenses_out, request, candidates, warnings)
 
-    meta = RecommendationMeta(
+    diagnostics = Diagnostics(
         providers_used=[p.name for p in providers],
         candidates_found=candidates_found,
         candidates_after_filter=len(filtered),
@@ -82,11 +82,11 @@ async def search(
     )
     return HotelSearchResponse(
         request_id=request.request_id,
-        status=_status(lenses_out, warnings),
+        agent_status=_status(lenses_out, warnings),
         warnings=warnings,
         resolved=resolved,
         lenses=lenses_out,
-        meta=meta,
+        diagnostics=diagnostics,
     )
 
 
@@ -140,6 +140,7 @@ async def _resolve(
     resolved = ResolvedQuery(
         center=center,
         city=city,
+        area=place.desired_area,
         check_in=stay.check_in if stay else None,
         check_out=stay.check_out if stay else None,
         currency=stay.currency if stay else None,
@@ -305,12 +306,11 @@ def _apply_budget_fallback(
     price_max = request.filters.price_max
     if price_max is None:
         return
-    picked = {pick.hotel.id: pick.hotel for picks in lenses_out.values() for pick in picks}
-    over = [
-        h
-        for h in picked.values()
-        if h.price_per_night is not None and h.price_per_night > price_max
-    ]
+    over = any(
+        pick.price_per_night is not None and pick.price_per_night > price_max
+        for picks in lenses_out.values()
+        for pick in picks
+    )
     if not over:
         return
     prices = [h.price_per_night for h in candidates if h.price_per_night is not None]

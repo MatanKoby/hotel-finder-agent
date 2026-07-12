@@ -23,7 +23,7 @@ _EXPECTED_EXPORTS = {
     "search", "search_sync",
     "HotelSearchRequest", "HotelSearchResponse",
     "Place", "Stay", "Occupancy", "Filters",
-    "Pick", "RateOffer", "ResolvedQuery", "RecommendationMeta",
+    "Pick", "RateOffer", "ResolvedQuery", "Diagnostics",
     "Intent", "LensName", "Settings",
     "Hotel", "GeoPoint", "Amenity", "PriceBand",
 }
@@ -59,7 +59,7 @@ def test_offline_mock_search_runs() -> None:
         Settings(_env_file=None, enabled_providers=["mock"]),
     )
     assert isinstance(response, HotelSearchResponse)
-    assert response.status == "ok"
+    assert response.agent_status == "ok"
     assert any(picks for picks in response.lenses.values())
 
 

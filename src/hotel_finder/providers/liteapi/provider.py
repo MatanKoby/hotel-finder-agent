@@ -48,8 +48,16 @@ class LiteApiProvider:
             rates_by_hotel: dict[str, dict[str, Any]] = {}
             nights: int | None = None
             if request.stay is not None and hotel_ids:
-                nights = (request.stay.check_out - request.stay.check_in).days
-                rates = await client.hotels_rates(hotel_ids=hotel_ids, stay=request.stay)
+                stay = request.stay
+                nights = (stay.check_out - stay.check_in).days
+                # A None stay.rooms derives one room from trip-level guests; a set value overrides.
+                rooms = stay.rooms if stay.rooms is not None else [request.guests]
+                rates = await client.hotels_rates(
+                    hotel_ids=hotel_ids,
+                    stay=stay,
+                    rooms=rooms,
+                    guest_nationality=request.guest_nationality,
+                )
                 for entry in rates.get("data", []):
                     rates_by_hotel[entry["hotelId"]] = entry
 

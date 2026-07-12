@@ -1,8 +1,11 @@
 """Project scored hotels into the response ``Pick`` shape.
 
-The rationale itself is produced by the scorer; this stage attaches it to a ``Pick``, surfaces the
-coordinates explicitly (so the downstream itinerary agent can plan around each hotel), and attaches
-the hotel's priced ``offers`` (built by the pipeline per ``contract.md`` → Budget and offers).
+``Pick`` is **flat** (no nested ``hotel``): this stage promotes the fields the orchestrator renders
+and reasons over up from the ``Hotel``, maps the internal ``subscores`` onto the wire field ``why``,
+attaches the scorer's rationale and the hotel's priced ``offers`` (built by the pipeline per
+``contract.md`` → Budget and offers), and surfaces coordinates so the itinerary agent can plan
+around each hotel. ``image_url`` and ``distance_to_desired_km`` are declared here but stay ``None``
+until Batch C2 (provider-backed enrichment) populates them.
 """
 
 from __future__ import annotations
@@ -12,12 +15,24 @@ from hotel_finder.scoring.base import ScoredHotel
 
 
 def to_pick(scored: ScoredHotel, offers: list[RateOffer]) -> Pick:
+    hotel = scored.hotel
     return Pick(
-        hotel=scored.hotel,
+        name=hotel.name,
         score=scored.score,
-        subscores=scored.subscores,
         rationale=scored.rationale,
-        coordinates=scored.hotel.location,
+        why=scored.subscores,
+        area=hotel.area,
+        distance_to_desired_km=None,  # computed in Batch C2
+        price_per_night=hotel.price_per_night,
+        currency=hotel.currency,
+        rating=hotel.rating,
+        review_count=hotel.review_count,
+        star_rating=hotel.star_rating,
+        description=hotel.description,
+        amenities=hotel.amenities,
+        coordinates=hotel.location,
+        image_url=None,  # populated from the provider in Batch C2
+        url=hotel.url,
         offers=offers,
     )
 

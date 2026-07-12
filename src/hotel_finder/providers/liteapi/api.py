@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from hotel_finder.contracts import Stay
+from hotel_finder.contracts import Occupancy, Stay
 
 
 class LiteApiClient:
@@ -65,17 +65,28 @@ class LiteApiClient:
         payload: dict[str, Any] = response.json()
         return payload
 
-    async def hotels_rates(self, *, hotel_ids: list[str], stay: Stay) -> dict[str, Any]:
-        """Real per-hotel rates for the given ids and stay."""
+    async def hotels_rates(
+        self,
+        *,
+        hotel_ids: list[str],
+        stay: Stay,
+        rooms: list[Occupancy],
+        guest_nationality: str,
+    ) -> dict[str, Any]:
+        """Real per-hotel rates for the given ids, stay dates, rooms, and traveler nationality.
+
+        ``rooms`` and ``guest_nationality`` are supplied by the caller (the provider derives rooms
+        from ``request.guests`` when ``stay.rooms`` is ``None``, and reads the trip-level
+        ``guest_nationality``) rather than read off ``Stay``, since those are trip-level now."""
         body: dict[str, Any] = {
             "hotelIds": hotel_ids,
             "checkin": stay.check_in.isoformat(),
             "checkout": stay.check_out.isoformat(),
             "currency": stay.currency,
-            "guestNationality": stay.guest_nationality,
+            "guestNationality": guest_nationality,
             "occupancies": [
                 {"adults": room.adults, "children": list(room.children_ages)}
-                for room in stay.rooms
+                for room in rooms
             ],
         }
         response = await self._client.post("/hotels/rates", json=body)
