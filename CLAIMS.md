@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch P1 — Evaluation harness and test scenarios
+- Owner: claude
+- Started: 2026-07-12 19:29
+
 ## Completed
 
 ### Batch C2 — Provider-backed enrichment (image_url, distance_to_desired_km)
