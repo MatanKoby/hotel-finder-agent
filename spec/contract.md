@@ -199,9 +199,10 @@ records the fallback (see `scoring.md`, Batch M1e in `specflow/history/BUILD_QUE
 
 ## Status vs the current code
 
-**Batch C1 has landed the reshape.** `contracts.py` now carries the shape described above: flat
-`Pick` (no nested `hotel`), trip-level `guests` + `guest_nationality`, `agent_status`,
-`diagnostics` (`Diagnostics`), `Pick.why`, and a `0..1`-bounded `Pick.score`. The only remaining
-divergence is that `Pick.image_url` and `Pick.distance_to_desired_km` are **declared but return
-`None`** — **Batch C2** (provider-backed `image_url` + computed `distance_to_desired_km`) populates
-them; see `BUILD_QUEUE.md`.
+**The reshape has fully landed (Batches C1 + C2).** `contracts.py` and the stages match the shape
+described above: flat `Pick` (no nested `hotel`), trip-level `guests` + `guest_nationality`,
+`agent_status`, `diagnostics` (`Diagnostics`), `Pick.why`, and a `0..1`-bounded `Pick.score`. C2
+populated the last two fields: `Pick.image_url` (from the LiteAPI adapter's `main_photo`/`thumbnail`;
+`None` for the mock and photo-less hotels) and `Pick.distance_to_desired_km` (haversine from the
+hotel to the resolved search `center`; `None` when the center or the hotel's coordinates are
+missing). No known divergence remains.
