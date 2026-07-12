@@ -52,7 +52,8 @@ dictionary). The builder maps from those.
 | `reviewCount` | `review_count` | |
 | `facilityIds` (int[]) | `amenities` | id → English via `data_facilities.json`, then `normalize_amenity` (`domain-model.md`); unknown ids drop |
 | `currency` | `currency` | |
-| `main_photo`, `thumbnail`, `hotelTypeId`, `chain`, `zip` | `raw` | kept in `raw`; `hotelTypeId` drives `property_types` filtering |
+| `main_photo` \| `thumbnail` | `image_url` | first non-empty of the two (`main_photo` preferred); still kept in `raw` |
+| `hotelTypeId`, `chain`, `zip` | `raw` | kept in `raw`; `hotelTypeId` drives `property_types` filtering |
 
 **`hotels/rates` → `RateOffer`** (per hotel, from `data[].roomTypes[].rates[]`):
 
