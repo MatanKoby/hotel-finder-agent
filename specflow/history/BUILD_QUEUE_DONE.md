@@ -10,6 +10,17 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
+Reshaped the M1 contract to the orchestrator-agreed flat/renamed wire shape (`spec/contract.md`),
+no new provider data. Request gained trip-level `guests: Occupancy` + `guest_nationality`, `Stay.rooms`
+became `list[Occupancy] | None` (None → one room from `guests`, else overrides), `guest_nationality`
+left `Stay`. Response: `status` → `agent_status`, `meta`/`RecommendationMeta` → `diagnostics`/`Diagnostics`,
+`ResolvedQuery` gained `area`. `Pick` flattened (fields promoted from `Hotel`, no nested `hotel`/`raw`/
+`sources`), `subscores` → `why`, `score` bounded `[0,1]`, `image_url`/`distance_to_desired_km` declared
+but `None` (→ C2). Provider `hotels_rates` now takes `rooms` + trip-level `guest_nationality`. Key commit
+`9723b95`. `make check` green, 66 tests (+1: `Pick.score ∈ [0,1]` and one overall score across lenses).
+Deferred: `image_url` + `distance_to_desired_km` population (Batch C2).
+
 ## Batch M1e — Integration surface + minimal orchestrator example (Milestone 1 complete)
 Shipped `examples/orchestrator_sim.py` (builds a `HotelSearchRequest`, calls `search()`/`search_sync()`,
 pretty-prints the envelope), finalized the top-level exports (+ `py.typed`), removed `demo.py` and its

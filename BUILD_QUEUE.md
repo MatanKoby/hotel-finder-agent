@@ -35,12 +35,11 @@ envelope path locally. **There is no interactive CLI** (verification is via the 
 scoring with heuristic fallback, free-text geocoding, no mandatory `.env`, no crashes. The remaining
 batches below are **post-M1** (evaluation and quality).
 
-> **Pick-order pointer for "continue".** M1 is done. The next work is the **contract reshape**:
-> **C1** (flatten Pick + renames + trip-level guests), then **C2** (provider-backed `image_url` /
-> `distance_to_desired_km`) — the M1 contract was renegotiated with the orchestrator (see
-> `spec/contract.md`). After those, **P1** (evaluation harness), then **P2** (quality); P3/P4/P5 are
-> open-scope and need a `spec-edit` first. Claim via `specflow/procedures/claim-batch.md`, record in
-> `CLAIMS.md`, `make check` as the gate.
+> **Pick-order pointer for "continue".** M1 is done and **C1 (contract reshape) has shipped** (see
+> `CLAIMS.md` → Completed). The next work is **C2** (provider-backed `image_url` /
+> `distance_to_desired_km`), which finishes the reshape. After it, **P1** (evaluation harness), then
+> **P2** (quality); P3/P4/P5 are open-scope and need a `spec-edit` first. Claim via
+> `specflow/procedures/claim-batch.md`, record in `CLAIMS.md`, `make check` as the gate.
 
 ---
 
@@ -49,36 +48,8 @@ batches below are **post-M1** (evaluation and quality).
 The M1 contract was renegotiated with the orchestrator ("tripper") after M1 shipped — see
 `spec/contract.md` → **Status vs the current code**. These two batches move the code from the nested
 M1 shape to the agreed flat/renamed wire shape. **Land before P1** so the eval harness targets the
-final contract. C1 does the pure-shape refactor (no new provider data); C2 populates the two fields
-C1 declares nullable.
-
-### Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
-
-**Depends on:** M1e. **Goal.** Refactor `contracts.py` and the response/request-building stages to
-the wire shape in `spec/contract.md`, with **no new provider data** (the two new fields return
-`None` here, populated in C2).
-
-- **Request:** add trip-level `guests: Occupancy` (default `Occupancy()`) and
-  `guest_nationality: str = "US"`; change `Stay.rooms` to `list[Occupancy] | None = None` (`None`
-  derives one room from `guests`; a set value **overrides** `guests`); remove `guest_nationality`
-  from `Stay`. `intent`/`anchor_hotel` stay on the model with inert defaults (`zone`/`None`) but out
-  of the documented wire.
-- **Response:** rename `status` → `agent_status`, rename `meta` → `diagnostics` (rename
-  `RecommendationMeta` → `Diagnostics`), add `area` to `ResolvedQuery`.
-- **Pick (flatten):** surface `name` / `area` / `price_per_night` / `currency` / `rating` /
-  `review_count` / `star_rating` / `description` / `amenities` / `url` up from the hotel (drop the
-  nested `hotel`, and `raw` / full `sources` from the wire); rename the wire field `subscores` →
-  `why` (internal `ScoredHotel.subscores` is unchanged — `explain.py:18` maps it); bound `score`
-  with `Field(ge=0, le=1)`; declare `image_url: str | None` and `distance_to_desired_km: float |
-  None`, both returning `None` in this batch.
-- **Pipeline:** derive `[guests]` when `stay.rooms is None`; thread trip-level `guest_nationality`
-  onto the rate call; `explain.py` builds the flat `Pick` (maps `subscores → why`).
-- **Callers/tests:** update `examples/orchestrator_sim.py` (render `pick.name`, `agent_status`,
-  `diagnostics`) and all affected tests; add a test asserting `Pick.score ∈ [0, 1]` and that the
-  same overall score is carried across lenses (no per-tier re-normalization).
-- **Files:** `src/hotel_finder/contracts.py`, `src/hotel_finder/pipeline.py`,
-  `src/hotel_finder/stages/explain.py`, `examples/orchestrator_sim.py`, `tests/**`. **Gate:**
-  `make check` green.
+final contract. C1 (shipped) did the pure-shape refactor (no new provider data); C2 populates the two fields
+C1 declared nullable.
 
 ### Batch C2 — Provider-backed enrichment (`image_url`, `distance_to_desired_km`)
 

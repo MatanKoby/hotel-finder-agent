@@ -19,11 +19,43 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
 - Owner: claude
 - Started: 2026-07-12 05:57
+- Finished: 2026-07-12 11:03
+- Commit: 9723b95
 
-## Completed
+**What shipped.** Refactored `contracts.py` and the response/request-building stages to the
+orchestrator-agreed flat/renamed wire shape (`spec/contract.md`), with **no new provider data** (the
+two new `Pick` fields return `None` until C2). **Request:** trip-level `guests: Occupancy`
+(default `Occupancy()`) and `guest_nationality: str = "US"`; `Stay.rooms` is now
+`list[Occupancy] | None = None` (`None` derives one room from `guests`, a set value **overrides**);
+`guest_nationality` removed from `Stay`; `intent`/`anchor_hotel` keep inert defaults, off the
+documented wire. **Response:** `status` → `agent_status`; `meta` → `diagnostics`
+(`RecommendationMeta` → `Diagnostics`); `ResolvedQuery` gained `area` (echoes `place.desired_area`).
+**Pick (flattened):** `name`/`area`/`price_per_night`/`currency`/`rating`/`review_count`/
+`star_rating`/`description`/`amenities`/`coordinates`/`url` promoted up from `Hotel`; no nested
+`hotel` (nor `raw`/`sources`) on the wire; `subscores` → `why`; `score` bounded `Field(ge=0, le=1)`;
+`image_url` / `distance_to_desired_km` declared but `None`. **Pipeline/provider:** derive `[guests]`
+when `stay.rooms is None`; thread trip-level `guest_nationality` onto the rate call
+(`api.hotels_rates` now takes `rooms` + `guest_nationality`, no longer read off `Stay`).
+`explain.py` builds the flat `Pick` and maps `subscores → why`. Top-level exports swapped
+`RecommendationMeta` → `Diagnostics`. Updated `spec/contract.md`'s "Status vs the current code" note
+to record the reshape landed (only C2 fields remain).
+
+**Verification.** `make check` green (ruff + mypy strict on 31 source files); pytest 66 passed
+(+1: `test_pipeline.py::test_pick_score_normalized_and_stable_across_lenses` asserts `Pick.score ∈
+[0,1]` and that a hotel appearing in multiple lenses carries the **same** overall score, i.e. no
+per-tier re-normalization in `stratified_best`; the rest updated for the renames/flatten). Ran the
+edited `examples/orchestrator_sim.py` offline (mock): renders the flat picks (`pick.name`, `area`,
+`agent_status`, `diagnostics`) with real offers across all three lenses.
+
+**Deferred / notes.** `Pick.image_url` and `Pick.distance_to_desired_km` are declared and return
+`None` — **Batch C2** populates them (provider `main_photo`/`thumbnail` + `haversine` to
+`resolved.center`). Next: C2, then P1 (eval harness targets this final contract). `dev` is pushed to
+`origin/dev`.
 
 ### Batch M1e — Integration surface + minimal orchestrator example
 - Owner: claude
