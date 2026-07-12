@@ -35,13 +35,13 @@ response = await search(request)          # async entry point
 
 for lens, picks in response.lenses.items():
     for pick in picks:
-        print(lens, pick.hotel.name, pick.score, pick.offers)
+        print(lens, pick.name, pick.score, pick.offers)
 ```
 
 The Pydantic models **are the shared validator**: the orchestrator constructs `HotelSearchRequest`
 on its own side, so a malformed request raises `pydantic.ValidationError` at construction, before
 `search()` runs. During work the agent never crashes — data problems (a provider down, nothing in
-budget, the LLM unavailable) become `response.warnings` + `response.status`
+budget, the LLM unavailable) become `response.warnings` + `response.agent_status`
 (`ok` / `empty` / `degraded`), never exceptions. `model_json_schema()` is available if the caller
 wants the request schema as a tool definition.
 
