@@ -199,10 +199,9 @@ records the fallback (see `scoring.md`, Batch M1e in `specflow/history/BUILD_QUE
 
 ## Status vs the current code
 
-M1 shipped the **nested** shape: `contracts.py` currently carries `Pick.hotel: Hotel` (nested),
-`status`, `meta` (`RecommendationMeta`), `Pick.subscores`, occupancy under `Stay.rooms`,
-`guest_nationality` on `Stay`, and an unbounded `Pick.score`. The design above (flat `Pick`, trip-
-level `guests` + `guest_nationality`, `agent_status`, `diagnostics`, `Pick.why`, `0..1` `score`, the
-new `image_url` / `distance_to_desired_km` fields) is the **post-M1 target** negotiated with the
-orchestrator. The refactor is **Batch C1** (contract reshape) and **Batch C2** (provider-backed
-`image_url` + computed `distance_to_desired_km`) in `BUILD_QUEUE.md`.
+**Batch C1 has landed the reshape.** `contracts.py` now carries the shape described above: flat
+`Pick` (no nested `hotel`), trip-level `guests` + `guest_nationality`, `agent_status`,
+`diagnostics` (`Diagnostics`), `Pick.why`, and a `0..1`-bounded `Pick.score`. The only remaining
+divergence is that `Pick.image_url` and `Pick.distance_to_desired_km` are **declared but return
+`None`** — **Batch C2** (provider-backed `image_url` + computed `distance_to_desired_km`) populates
+them; see `BUILD_QUEUE.md`.
