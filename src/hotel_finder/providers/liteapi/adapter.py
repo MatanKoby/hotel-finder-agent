@@ -102,6 +102,8 @@ class LiteApiAdapter:
         reviews = raw.get("reviewCount")
         review_count = reviews if isinstance(reviews, int) and reviews >= 0 else None
         description = raw.get("hotelDescription")
+        # First non-empty of main_photo / thumbnail (see data-sources.md mapping); still in raw.
+        image_url = raw.get("main_photo") or raw.get("thumbnail") or None
 
         offers = _rate_offers(rate_entry, nights) if rate_entry and nights else []
         per_nights = [o["per_night"] for o in offers if o["per_night"] is not None]
@@ -124,6 +126,7 @@ class LiteApiAdapter:
             review_count=review_count,
             star_rating=star_rating,
             amenities=self._amenities(raw.get("facilityIds", [])),
+            image_url=image_url,
             description=strip_html(description) if description else None,
             raw=stored_raw,
         )

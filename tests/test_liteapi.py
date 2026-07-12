@@ -66,7 +66,22 @@ def test_adapter_maps_content_fields(
     assert seventy.rating == 9.8  # guest score kept on the 0-10 scale
     assert seventy.review_count == 3940
     assert seventy.description and "<" not in seventy.description  # HTML stripped
+    assert seventy.image_url == "https://static.cupid.travel/hotels/251247628.jpg"  # main_photo
     assert {Amenity.WIFI, Amenity.AC} <= seventy.amenities  # facilityIds -> vocab
+
+
+def test_adapter_image_url_prefers_main_photo_then_thumbnail(
+    facilities: dict[str, str],
+) -> None:
+    adapter = LiteApiAdapter(facilities=facilities)
+    base = {"id": "x", "name": "X"}
+
+    assert adapter.to_hotel({**base, "main_photo": "m.jpg", "thumbnail": "t.jpg"}).image_url == (
+        "m.jpg"
+    )
+    assert adapter.to_hotel({**base, "thumbnail": "t.jpg"}).image_url == "t.jpg"  # fallback
+    assert adapter.to_hotel({**base, "main_photo": ""}).image_url is None  # empty -> None
+    assert adapter.to_hotel(base).image_url is None  # neither present
 
 
 def test_adapter_builds_priced_offers(
@@ -180,6 +195,28 @@ async def test_pipeline_end_to_end_over_liteapi_stub(
     assert any(o.over_budget for o in all_offers)
     assert response.agent_status == "degraded"
     assert any("within EUR 90" in w for w in response.warnings)
+
+
+async def test_pipeline_surfaces_image_and_content_over_liteapi_stub(
+    monkeypatch: pytest.MonkeyPatch, hotels_payload: dict[str, Any], rates_payload: dict[str, Any]
+) -> None:
+    """image_url, review_count, and description reach the picks end-to-end (not silently None)."""
+    _stub_client(monkeypatch, hotels_payload, rates_payload)
+    settings = Settings(
+        _env_file=None, scorer="heuristic", enabled_providers=["liteapi"], liteapi_api_key="k"
+    )
+    request = HotelSearchRequest(
+        place=Place(country_code="ES", city="Barcelona"), stay=_stay()
+    )
+    response = await search(request, settings)
+
+    picks = [p for picks in response.lenses.values() for p in picks]
+    assert picks
+    assert any(p.image_url and p.image_url.startswith("http") for p in picks)
+    assert any(p.review_count is not None for p in picks)
+    assert any(p.description for p in picks)
+    # City-only request has no resolved center, so distance is not computed.
+    assert all(p.distance_to_desired_km is None for p in picks)
 
 
 async def test_pipeline_refundable_filter_over_liteapi_stub(

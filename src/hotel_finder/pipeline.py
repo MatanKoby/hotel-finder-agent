@@ -69,7 +69,7 @@ async def search(
     warnings.extend(scorer.report.warnings)  # e.g. an LLM -> heuristic fallback
 
     offers_by_id = {s.hotel.id: _offers_for(s.hotel, request) for s in scored}
-    lenses_out = _build_lenses(scored, request, offers_by_id)
+    lenses_out = _build_lenses(scored, request, offers_by_id, resolved.center)
     _apply_budget_fallback(lenses_out, request, candidates, warnings)
 
     diagnostics = Diagnostics(
@@ -277,20 +277,21 @@ def _build_lenses(
     scored: list[ScoredHotel],
     request: HotelSearchRequest,
     offers_by_id: dict[str, list[RateOffer]],
+    center: GeoPoint | None,
 ) -> dict[LensName, list[Pick]]:
     k = request.picks_per_lens
     wanted = request.lenses if request.lenses is not None else list(LensName)
     out: dict[LensName, list[Pick]] = {}
     if LensName.STRATIFIED_BEST in wanted:
         out[LensName.STRATIFIED_BEST] = to_picks(
-            lenses.stratified_best(scored, per_band=1), offers_by_id
+            lenses.stratified_best(scored, per_band=1), offers_by_id, center
         )
     if LensName.OVERALL_STANDOUTS in wanted:
         out[LensName.OVERALL_STANDOUTS] = to_picks(
-            lenses.overall_standouts(scored, k), offers_by_id
+            lenses.overall_standouts(scored, k), offers_by_id, center
         )
     if LensName.HIDDEN_GEMS in wanted:
-        out[LensName.HIDDEN_GEMS] = to_picks(lenses.hidden_gems(scored, k), offers_by_id)
+        out[LensName.HIDDEN_GEMS] = to_picks(lenses.hidden_gems(scored, k), offers_by_id, center)
     return out
 
 

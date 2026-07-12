@@ -7,6 +7,7 @@ from datetime import date
 
 from hotel_finder.config import Settings
 from hotel_finder.contracts import Filters, HotelSearchRequest, LensName, Place, Stay
+from hotel_finder.models import GeoPoint
 from hotel_finder.pipeline import search, search_sync
 
 
@@ -124,6 +125,21 @@ def test_search_sync_returns_envelope() -> None:
 
     assert response.request_id == request.request_id
     assert response.lenses
+
+
+async def test_distance_to_desired_km_populated_when_center_resolves() -> None:
+    # A center (with a generous radius so filtering keeps the Barcelona mock hotels) means every
+    # pick with coordinates gets a distance; a city-only search leaves it None (no center).
+    center = GeoPoint(lat=41.39, lon=2.17)
+    request = HotelSearchRequest(place=Place(city="Barcelona", center=center, radius_km=500.0))
+    response = await search(request, _settings())
+
+    picks = [p for picks in response.lenses.values() for p in picks]
+    located = [p for p in picks if p.coordinates is not None]
+    assert located
+    for pick in located:
+        assert pick.distance_to_desired_km is not None
+        assert pick.distance_to_desired_km >= 0
 
 
 async def test_pick_score_normalized_and_stable_across_lenses() -> None:

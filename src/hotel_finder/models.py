@@ -119,6 +119,7 @@ class Hotel(BaseModel):
 
     amenities: set[Amenity] = Field(default_factory=set)
     url: str | None = None
+    image_url: str | None = None  # provider-supplied photo (e.g. LiteAPI main_photo); None if none
     description: str | None = None  # free text; the LLM scorer reads this for "character"
 
     raw: dict[str, Any] = Field(default_factory=dict)  # original provider payload
