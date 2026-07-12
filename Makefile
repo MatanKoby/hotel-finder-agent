@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test run check
+.PHONY: install lint format typecheck test run check eval
 
 install:
 	uv sync
@@ -20,3 +20,7 @@ check: lint typecheck test
 
 run:
 	uv run python examples/orchestrator_sim.py
+
+# Result-quality baseline: run every eval scenario and print the metrics table
+eval:
+	uv run python tests/eval/report.py
