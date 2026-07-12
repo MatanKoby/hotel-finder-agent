@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch C2 — Provider-backed enrichment (image_url, distance_to_desired_km)
+- Owner: claude
+- Started: 2026-07-12 13:52
+
 ## Completed
 
 ### Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
