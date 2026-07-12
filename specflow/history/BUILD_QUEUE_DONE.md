@@ -10,6 +10,17 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch C2 — Provider-backed enrichment (image_url, distance_to_desired_km)
+Populated the two `Pick` fields C1 left nullable, completing the reshape. Added `Hotel.image_url`
+(`models.py`); the LiteAPI adapter maps `main_photo`→`thumbnail` fallback (kept in `raw`;
+`data-sources.md` mapping updated), mock leaves it `None`, `explain.py` surfaces it. `explain.to_pick`/
+`to_picks` take the resolved `center` and compute `distance_to_desired_km` = haversine(hotel, center)
+(2 dp, `None` when center or coords missing); the pipeline threads `resolved.center` through
+`_build_lenses`. `review_count`/`description` confirmed end-to-end. Key commit `38ae7d4`. `make check`
+green, 73 tests (+7); verified live over the LiteAPI sandbox (real photo URLs + 0.4-1.4 km distances
+from a Sagrada Família center). Deferred: distance is to `resolved.center`, not a geocoded
+`desired_area` point.
+
 ## Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
 Reshaped the M1 contract to the orchestrator-agreed flat/renamed wire shape (`spec/contract.md`),
 no new provider data. Request gained trip-level `guests: Occupancy` + `guest_nationality`, `Stay.rooms`

@@ -19,11 +19,44 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch C2 — Provider-backed enrichment (image_url, distance_to_desired_km)
 - Owner: claude
 - Started: 2026-07-12 13:52
+- Finished: 2026-07-12 14:10
+- Commit: 38ae7d4
 
-## Completed
+**What shipped.** Populated the two `Pick` fields C1 declared nullable, completing the contract
+reshape. **`image_url`:** added `Hotel.image_url` (`models.py`, per `spec/domain-model.md`); the
+LiteAPI adapter maps `main_photo` (preferred) / `thumbnail` (fallback), keeping both in `raw`
+(`spec/data-sources.md` mapping-table row updated to route them to `image_url`); the mock leaves it
+`None`; `explain.py` surfaces `hotel.image_url` on the flat `Pick`. **`distance_to_desired_km`:**
+`explain.to_pick`/`to_picks` now take the resolved search `center` and compute
+`haversine(hotel.location, center)` via `utils/geo.py`, rounded to 2 dp, `None` when the center or
+the hotel's coordinates are missing; the pipeline threads `resolved.center` through `_build_lenses`.
+`review_count` + `description` already flowed from the adapter (C1 surfaced them) — now covered
+end-to-end so they aren't silently `None`. Also fixed the stale README example (pre-C1
+`pick.hotel.name` / `response.status`) in a preceding `docs:` commit, and updated
+`spec/contract.md`'s "Status vs the current code" note (reshape fully landed, no divergence).
+
+**Verification.** `make check` green (ruff + mypy strict on 31 source files); pytest 73 passed
+(+7: `tests/test_explain.py` `to_pick` distance computed / `None` without center / `None` without
+coords / `image_url` passthrough; `tests/test_liteapi.py` adapter `image_url` main_photo→thumbnail
+fallback + absent, and an end-to-end stub asserting `image_url`/`review_count`/`description` reach
+the picks and city-only distance stays `None`; `tests/test_pipeline.py` distance populated when a
+center resolves). **Verified live** over the LiteAPI sandbox: real Barcelona hotels returned real
+`main_photo` URLs and `distance_to_desired_km` 0.4-1.4 km from a Sagrada Família center, with
+`review_count` + `description` populated.
+
+**Deferred / notes.** `distance_to_desired_km` is measured to `resolved.center`, not to a geocoded
+`place.desired_area` point (`desired_area` is a string bias, never geocoded to a point in this repo);
+if a true desired-area distance is wanted later, geocode `desired_area` and pass that point instead.
+The contract reshape (C1 + C2) is complete. Next open work: **P1** (eval harness) then **P2**
+(quality); the two M1 correctness flags (`filters.property_types` unenforced, `over_budget` per-night
+vs total) remain open and each needs a `spec-edit` first. `dev` is pushed to `origin/dev`.
+
+### Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
 
 ### Batch C1 — Contract reshape (flatten Pick, renames, trip-level guests)
 - Owner: claude

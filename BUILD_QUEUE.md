@@ -35,35 +35,15 @@ envelope path locally. **There is no interactive CLI** (verification is via the 
 scoring with heuristic fallback, free-text geocoding, no mandatory `.env`, no crashes. The remaining
 batches below are **post-M1** (evaluation and quality).
 
-> **Pick-order pointer for "continue".** M1 is done and **C1 (contract reshape) has shipped** (see
-> `CLAIMS.md` → Completed). The next work is **C2** (provider-backed `image_url` /
-> `distance_to_desired_km`), which finishes the reshape. After it, **P1** (evaluation harness), then
-> **P2** (quality); P3/P4/P5 are open-scope and need a `spec-edit` first. Claim via
-> `specflow/procedures/claim-batch.md`, record in `CLAIMS.md`, `make check` as the gate.
+> **Pick-order pointer for "continue".** M1 is done and the **contract reshape (C1 + C2) has fully
+> shipped** (see `CLAIMS.md` → Completed; `spec/contract.md` → Status vs the current code). The next
+> work is **P1** (evaluation harness), then **P2** (quality); P3/P4/P5 are open-scope and need a
+> `spec-edit` first. Two M1 correctness flags are also still open (each needs a `spec-edit` first):
+> `filters.property_types` is accepted but unenforced, and `over_budget` is computed per-night while
+> `spec/contract.md` phrases the budget as a total. Claim via `specflow/procedures/claim-batch.md`,
+> record in `CLAIMS.md`, `make check` as the gate.
 
 ---
-
-## Contract reshape (post-M1, orchestrator-agreed)
-
-The M1 contract was renegotiated with the orchestrator ("tripper") after M1 shipped — see
-`spec/contract.md` → **Status vs the current code**. These two batches move the code from the nested
-M1 shape to the agreed flat/renamed wire shape. **Land before P1** so the eval harness targets the
-final contract. C1 (shipped) did the pure-shape refactor (no new provider data); C2 populates the two fields
-C1 declared nullable.
-
-### Batch C2 — Provider-backed enrichment (`image_url`, `distance_to_desired_km`)
-
-**Depends on:** C1. **Goal.** Populate the two fields C1 declared nullable.
-
-- **`image_url`:** add `image_url: str | None` to `Hotel` (`models.py`, per `spec/domain-model.md`);
-  map LiteAPI `main_photo` / `thumbnail` (today kept in `raw`) in the liteapi adapter; mock leaves
-  it `None`; surface it in `explain.py`'s flat `Pick`.
-- **`distance_to_desired_km`:** compute in `explain.py` via `utils/geo.py` `haversine` to
-  `resolved.center` / the desired-area point; `None` when neither is available.
-- **Verify** `review_count` and `description` populate end-to-end from LiteAPI (both already on
-  `Hotel`; C1 surfaces them — confirm they aren't silently `None`).
-- **Files:** `src/hotel_finder/models.py`, `src/hotel_finder/providers/liteapi/adapter.py`,
-  `src/hotel_finder/stages/explain.py`, `tests/**`. **Gate:** `make check` green.
 
 ## Post-M1 batches (testing, evaluation, quality)
 
