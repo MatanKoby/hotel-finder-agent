@@ -35,28 +35,19 @@ envelope path locally. **There is no interactive CLI** (verification is via the 
 scoring with heuristic fallback, free-text geocoding, no mandatory `.env`, no crashes. The remaining
 batches below are **post-M1** (evaluation and quality).
 
-> **Pick-order pointer for "continue".** M1 is done and the **contract reshape (C1 + C2) has fully
-> shipped** (see `CLAIMS.md` → Completed; `spec/contract.md` → Status vs the current code). The next
-> work is **P1** (evaluation harness), then **P2** (quality); P3/P4/P5 are open-scope and need a
-> `spec-edit` first. Two M1 correctness flags are also still open (each needs a `spec-edit` first):
-> `filters.property_types` is accepted but unenforced, and `over_budget` is computed per-night while
-> `spec/contract.md` phrases the budget as a total. Claim via `specflow/procedures/claim-batch.md`,
-> record in `CLAIMS.md`, `make check` as the gate.
+> **Pick-order pointer for "continue".** M1 is done, the **contract reshape (C1 + C2)** shipped, and
+> the **evaluation harness (P1)** shipped (`tests/eval/`, `make eval`; see `CLAIMS.md` → Completed).
+> The next work is **P2** (result quality) — it now has the P1 baseline to measure against; P3/P4/P5
+> are open-scope and need a `spec-edit` first. Two M1 correctness flags are also still open (each
+> needs a `spec-edit` first): `filters.property_types` is accepted but unenforced, and `over_budget`
+> is computed per-night while `spec/contract.md` phrases the budget as a total. Claim via
+> `specflow/procedures/claim-batch.md`, record in `CLAIMS.md`, `make check` as the gate.
 
 ---
 
 ## Post-M1 batches (testing, evaluation, quality)
 
 Out of scope for M1; unblock after it lands. M1 ships the capability; these make it work *well*.
-
-### Batch P1 — Evaluation harness and test scenarios
-
-**Depends on:** C1 (target the reshaped contract). **Goal.** Start testing it actually works
-properly: representative scenarios (cities, budgets, `refundable` variants, over-budget fallback,
-content-only) driven through `search()` via the orchestrator wrapper, with quality
-assertions/metrics (lenses populated, prices present, dedupe sane, `agent_status`/`warnings`
-correct). Establishes the baseline for improving results. Lands under `tests/eval/` (or
-`examples/eval/`).
 
 ### Batch P2 — Result-quality improvements
 

@@ -10,6 +10,18 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch P1 — Evaluation harness and test scenarios
+Shipped a result-quality evaluation harness in `tests/eval/`: `scenarios.py` (an 8-scenario catalog
+of `HotelSearchRequest` + declarative `Expect`, provider-agnostic), `metrics.py`
+(`check_invariants()` = contract guarantees for any request/provider + `evaluate()` = countable
+signals), `test_eval_scenarios.py` (runs under `make check`), and `report.py` (`make eval`, baseline
+metrics table, non-zero exit on any invariant breach). Scenarios cover budget-ok, over-budget
+fallback, refundable true/false, content-only, thin-result widening, geo-centre — all offline on the
+mock provider + heuristic scorer, deterministic and free. Documented in `spec/dev-guide.md`. Key
+commit `a77c522`. `make check` green, 90 tests (+17). The baseline Batch P2 tunes against; it also
+surfaced two mock content gaps (0% image_url, 0 non-refundable offers) that LiteAPI fills. No
+follow-ups deferred.
+
 ## Batch C2 — Provider-backed enrichment (image_url, distance_to_desired_km)
 Populated the two `Pick` fields C1 left nullable, completing the reshape. Added `Hotel.image_url`
 (`models.py`); the LiteAPI adapter maps `main_photo`→`thumbnail` fallback (kept in `raw`;

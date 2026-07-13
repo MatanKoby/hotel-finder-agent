@@ -19,11 +19,29 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch P1 — Evaluation harness and test scenarios
 - Owner: claude
 - Started: 2026-07-12 19:29
+- Finished: 2026-07-12 20:03
+- Commit: a77c522
 
-## Completed
+**What shipped.** A result-quality evaluation harness under `tests/eval/`, driving representative
+`search()` requests end to end on the offline mock provider + heuristic scorer (deterministic, no
+network, $0). Three modules: `scenarios.py` (the 8-scenario catalog — `HotelSearchRequest` + a
+declarative `Expect` — the single source of truth shared by tests and report, provider-agnostic so
+`eval_settings()` can be repointed at liteapi+llm), `metrics.py` (`check_invariants()` = the
+contract guarantees that must hold for any request/provider: score range, within-lens dedupe, one
+score per hotel across lenses, status/warning coherence, offer currency + over-budget/refundable
+sanity, `resolved` echo, centre→distance; plus `evaluate()` for countable signals), and
+`report.py` (`make eval` — prints the baseline metrics table, exits non-zero on any invariant
+violation). Scenarios cover the batch's list: budget-ok, over-budget fallback, refundable
+true/false, content-only, thin-result widening, geo-centre. Added `make eval` to the Makefile and
+documented the harness in `spec/dev-guide.md` (commit `5717d70`). `make check` green: **90 tests
+(+17)**, ruff + mypy clean. Baseline surfaced two real content gaps the mock exposes (0% image_url,
+0 non-refundable offers) — expected, LiteAPI fills both. This is the baseline Batch P2 tunes
+against. No follow-ups deferred.
 
 ### Batch C2 — Provider-backed enrichment (image_url, distance_to_desired_km)
 - Owner: claude
