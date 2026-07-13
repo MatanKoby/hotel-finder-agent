@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch P6 — Live-eval wiring + LLM thinking-off toggle
+- Owner: claude
+- Started: 2026-07-13 14:09
+
 ## Completed
 
 ### Batch P1 — Evaluation harness and test scenarios

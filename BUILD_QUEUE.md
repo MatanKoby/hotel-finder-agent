@@ -77,3 +77,14 @@ folder per `spec/providers.md`; cross-source dedupe stays in the pipeline.
 `spec/roadmap.md` (M1 → web search is secondary): a separate search tool/API feeding the pipeline
 when real providers return thin results. Chat completions do not browse, so this needs a search API
 (see `spec/data-sources.md`).
+
+### Batch P6 — Live-eval wiring + LLM thinking-off toggle
+
+**Depends on:** P1. **Goal.** Make `make eval` usable for *real* local evaluation and reach the
+closest-to-orchestrator LLM. Two parts: (1) point `tests/eval/report.py` at `Settings()` (env/`.env`)
+so the same catalog runs live (real LiteAPI + LLM), and surface the effective scorer per scenario;
+(2) add an `llm_disable_thinking` setting wired into the OpenAI-compatible backend
+(`chat_template_kwargs.enable_thinking=false`) so a Qwen3 dense-32B mirrors the orchestrator's
+non-thinking `qwen2.5-32b` without runaway latency (see `spec/scoring.md`, `spec/config.md`). The
+tests stay pinned offline; only the report goes live. Motivation: Nebius Token Factory has no
+`qwen2.5-32b`, and `Qwen3-32B`'s default thinking mode times out on the scorer prompt.
