@@ -13,6 +13,7 @@ the provider set (`providers.md`).
 | `llm_model` | `llama-3.3-70b-versatile` (verify current id at console.groq.com) | `LLM_MODEL` |
 | `llm_timeout` | `30.0` | `LLM_TIMEOUT` |
 | `llm_backend` | `auto` (else `openai` / `endpoint`) | `LLM_BACKEND` |
+| `llm_disable_thinking` | `false` (disable a hybrid model's thinking pass; OpenAI backend) | `LLM_DISABLE_THINKING` |
 | `nebius_endpoint_url` | `""` (orchestrator serverless endpoint) | `NEBIUS_ENDPOINT_URL` |
 | `nebius_endpoint_token` | `""` (bearer) | `NEBIUS_ENDPOINT_TOKEN` |
 | `nebius_endpoint_model` | `""` (auto-discovered via `/api/tags`) | `NEBIUS_ENDPOINT_MODEL` |
@@ -33,7 +34,12 @@ set, else heuristic). See `scoring.md`.
 - **Eval / testing (this repo): OpenAI-compatible + API key → Nebius Token Factory.** Set
   `SCORER=llm`, `LLM_BASE_URL=https://api.tokenfactory.nebius.com/v1/`, `LLM_API_KEY=<Bearer key>`,
   `LLM_MODEL=<a chat model id from your Nebius console>`. Uncapped model choice. (The hard-coded
-  defaults above point at Groq and are overridden by these values.)
+  defaults above point at Groq and are overridden by these values.) Token Factory has no
+  `qwen2.5-32b`; the closest to the orchestrator's dense-32B endpoint is `Qwen/Qwen3-32B` with
+  `LLM_DISABLE_THINKING=true` (Qwen3's thinking pass otherwise times out on the scorer prompt, and
+  disabling it also matches the non-thinking `qwen2.5-32b`). `llm_disable_thinking` sends
+  `chat_template_kwargs.enable_thinking=false` on the OpenAI backend; it is a no-op on models
+  without a thinking mode (see `scoring.md`).
 - **Orchestrator: shared Nebius serverless endpoint (no API key).** Set `SCORER=llm`,
   `NEBIUS_ENDPOINT_URL=<shared endpoint https URL>`, `NEBIUS_ENDPOINT_TOKEN=<bearer>`. The model is
   the single one the endpoint serves, auto-discovered via `GET {url}/api/tags` (override with

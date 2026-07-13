@@ -20,21 +20,24 @@ the runnable example; the orchestrator imports `search` directly (see `contract.
 
 ## Evaluation harness
 
-`tests/eval/` drives representative `search()` requests end to end and checks result quality. It
-runs on the offline **mock** provider + **heuristic** scorer, so the whole set is deterministic,
-network-free, and free of charge.
+`tests/eval/` drives representative `search()` requests end to end and checks result quality. The
+**tests** are pinned to the offline **mock** provider + **heuristic** scorer, so they are
+deterministic, network-free, and free of charge; the **report** reads real config (below).
 
 - `scenarios.py` — the scenario catalog (`HotelSearchRequest` + a declarative `Expect`), the single
-  source of truth shared by the tests and the report so they never drift. Provider-agnostic:
-  repoint `eval_settings()` at `liteapi` + `llm` to replay the same requests against live data.
+  source of truth shared by the tests and the report so they never drift. Provider-agnostic: the
+  same catalog runs offline or against live LiteAPI + an LLM.
 - `metrics.py` — `check_invariants()` (contract guarantees that hold for any request/provider:
   score range, within-lens dedupe, one score per hotel across lenses, status/warning coherence,
   offer currency + over-budget/refundable sanity, `resolved` echo, centre→distance) and
   `evaluate()` (countable quality signals). Both concepts live in `contract.md`.
 - `test_eval_scenarios.py` — asserts the invariants and each scenario's `Expect`; runs under
-  `make check`.
-- `report.py` (`make eval`) — prints the per-scenario metrics table, the baseline Batch P2 tunes
-  against, and exits non-zero on any invariant violation.
+  `make check` with the hermetic offline settings.
+- `report.py` (`make eval`) — reads `Settings()` from the environment / `.env`, so the same catalog
+  runs against **whatever is configured** (offline mock + heuristic by default, or real LiteAPI + an
+  LLM scorer when set). Prints the per-scenario metrics table (including the effective scorer, so an
+  LLM→heuristic fallback is visible) and exits non-zero on any invariant violation. This is the
+  baseline Batch P2 tunes against.
 
 **Real data + LLM scoring:** copy `.env.example` → `.env`. Set `LITEAPI_API_KEY` for real hotels
 (see `data-sources.md`). For scoring, pick a Nebius run mode (`config.md` → LLM run modes): a Token

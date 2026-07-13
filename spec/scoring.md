@@ -41,7 +41,10 @@ exception, or the response omits any hotel id. Overall is computed locally.
 
 1. **OpenAI-compatible** (eval/testing → Nebius Token Factory): the `openai` SDK against
    `llm_base_url` with `llm_api_key` + `llm_model`, `response_format=json_object`. Uncapped model
-   choice.
+   choice. When `llm_disable_thinking` is set it also sends
+   `extra_body={"chat_template_kwargs": {"enable_thinking": false}}`, so a hybrid-reasoning model
+   (Qwen3) skips its thinking pass — needed for latency and clean JSON when standing in for the
+   orchestrator's non-thinking `qwen2.5-32b` (see `config.md`); a no-op on models without it.
 2. **Nebius serverless endpoint** (orchestrator, no API key): a thin client over the **Ollama REST
    API** (`POST {url}/api/chat`, bearer `nebius_endpoint_token`), the single served model
    auto-discovered via `GET {url}/api/tags`. It probes `/api/tags` for liveness, retries a cold
