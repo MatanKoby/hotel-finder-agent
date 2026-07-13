@@ -53,11 +53,17 @@ Out of scope for M1; unblock after it lands. M1 ships the capability; these make
 
 ### Batch P2 — Result-quality improvements
 
-**Depends on:** P1 (a baseline to measure against). **Goal.** Improve results: lens-aware
-rationales in `stages/explain.py` (a hotel under `hidden_gems` reads differently from
-`stratified_best`), and tune the reasonable-but-untuned defaults from `spec/roadmap.md` → Open
-considerations (heuristic weightings `spec/scoring.md`, price-band cutoffs `spec/config.md`,
-gentler filter widening `spec/pipeline.md`).
+**Depends on:** P1 (a baseline to measure against). **Start from the concrete gaps in
+`spec/roadmap.md` → *Baseline findings (P1/P6 live eval)*** — that list is the prioritized to-fix
+set observed running `make eval` live, and each item names the file it touches. In short: a
+star-tier fallback for `stratified_best` when prices are absent (`stages/lenses.py`); geocode
+`desired_area` to a `center` so the neighbourhood bias and `distance_to_desired_km` actually work
+(`pipeline.py`); feed the LLM real distance/area fit (`scoring/llm.py`); revisit gem thresholds and
+add lens-aware rationales (`spec/scoring.md`, `stages/explain.py`); and tune the untuned defaults
+(heuristic weightings `spec/scoring.md`, price-band cutoffs `spec/config.md`, gentler filter
+widening `spec/pipeline.md`). **Re-measure every change with `make eval`** and keep the contract
+invariants green. (The LLM-latency/timeout issue is operational, tracked separately in the
+findings, not part of P2.)
 
 ### Batch P3 — `ANCHOR` intent (peers of a named hotel)
 
