@@ -19,11 +19,31 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch P6 — Live-eval wiring + LLM thinking-off toggle
 - Owner: claude
 - Started: 2026-07-13 14:09
+- Finished: 2026-07-13 14:26
+- Commit: f22fdf9
 
-## Completed
+**What shipped.** Made `make eval` usable for real local evaluation and reached the closest-to-
+orchestrator LLM on Nebius Token Factory. (1) `tests/eval/report.py` now reads `Settings()` from the
+environment / `.env` (was pinned offline), so the same catalog runs live (real LiteAPI + LLM); the
+tests stay hermetic-offline. The report gained a config banner and a per-scenario **scorer** column
+(`metrics.ScenarioMetrics.scorer` = `diagnostics.scorer`) so an LLM→heuristic fallback is visible.
+(2) Added `Settings.llm_disable_thinking` (`LLM_DISABLE_THINKING`), wired into the OpenAI-compatible
+backend as `extra_body={"chat_template_kwargs": {"enable_thinking": false}}`; no-op on models without
+a thinking mode. `.env.example` switched to `Qwen/Qwen3-32B` + `LLM_DISABLE_THINKING=true`.
+Motivation: Token Factory has no `qwen2.5-32b`; `Qwen3-32B` is the closest (dense 32B) but its
+default thinking pass times out on the scorer prompt (disabling it is fast **and** matches the
+orchestrator's non-thinking `qwen2.5-32b`). Spec: `config.md`, `scoring.md`, `dev-guide.md` (commit
+`62ce197`). `make check` green, **92 tests (+2** OpenAI-backend `extra_body` tests**)**. Verified
+live: all 8 eval scenarios scored by `scorer=llm`, 0 fallbacks, all contract invariants pass against
+real LiteAPI Barcelona hotels + Nebius Token Factory. Deferred: a cosmetic "Event loop is closed"
+teardown trace from the LiteAPI httpx client under per-call `asyncio.run` (does not affect results);
+the serverless-endpoint backend (Ollama REST) has no thinking-off knob yet (uses `enable_thinking`
+differently).
 
 ### Batch P1 — Evaluation harness and test scenarios
 - Owner: claude

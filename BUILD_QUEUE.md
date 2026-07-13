@@ -35,8 +35,10 @@ envelope path locally. **There is no interactive CLI** (verification is via the 
 scoring with heuristic fallback, free-text geocoding, no mandatory `.env`, no crashes. The remaining
 batches below are **post-M1** (evaluation and quality).
 
-> **Pick-order pointer for "continue".** M1 is done, the **contract reshape (C1 + C2)** shipped, and
-> the **evaluation harness (P1)** shipped (`tests/eval/`, `make eval`; see `CLAIMS.md` → Completed).
+> **Pick-order pointer for "continue".** M1 is done, the **contract reshape (C1 + C2)** shipped, the
+> **evaluation harness (P1)** shipped, and its **live-run wiring + LLM thinking-off toggle (P6)**
+> shipped — `make eval` now runs the catalog against real LiteAPI + a Nebius LLM (verified live with
+> `Qwen/Qwen3-32B`), or offline by default (see `CLAIMS.md` → Completed).
 > The next work is **P2** (result quality) — it now has the P1 baseline to measure against; P3/P4/P5
 > are open-scope and need a `spec-edit` first. Two M1 correctness flags are also still open (each
 > needs a `spec-edit` first): `filters.property_types` is accepted but unenforced, and `over_budget`
@@ -78,13 +80,3 @@ folder per `spec/providers.md`; cross-source dedupe stays in the pipeline.
 when real providers return thin results. Chat completions do not browse, so this needs a search API
 (see `spec/data-sources.md`).
 
-### Batch P6 — Live-eval wiring + LLM thinking-off toggle
-
-**Depends on:** P1. **Goal.** Make `make eval` usable for *real* local evaluation and reach the
-closest-to-orchestrator LLM. Two parts: (1) point `tests/eval/report.py` at `Settings()` (env/`.env`)
-so the same catalog runs live (real LiteAPI + LLM), and surface the effective scorer per scenario;
-(2) add an `llm_disable_thinking` setting wired into the OpenAI-compatible backend
-(`chat_template_kwargs.enable_thinking=false`) so a Qwen3 dense-32B mirrors the orchestrator's
-non-thinking `qwen2.5-32b` without runaway latency (see `spec/scoring.md`, `spec/config.md`). The
-tests stay pinned offline; only the report goes live. Motivation: Nebius Token Factory has no
-`qwen2.5-32b`, and `Qwen3-32B`'s default thinking mode times out on the scorer prompt.

@@ -10,6 +10,19 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch P6 — Live-eval wiring + LLM thinking-off toggle
+Made `make eval` real-config-aware and reached the closest-to-orchestrator LLM. `tests/eval/report.py`
+now reads `Settings()` from the environment / `.env` (was pinned offline) so the catalog runs live
+(real LiteAPI + LLM); tests stay hermetic-offline. Added a per-scenario scorer column so an
+LLM→heuristic fallback is visible. Added `Settings.llm_disable_thinking`, wired into the
+OpenAI-compatible backend as `extra_body={"chat_template_kwargs":{"enable_thinking":false}}`, so
+`Qwen/Qwen3-32B` (Token Factory's closest dense-32B to the orchestrator's non-thinking `qwen2.5-32b`)
+runs fast and returns clean JSON instead of timing out. `.env.example` → Qwen3-32B +
+`LLM_DISABLE_THINKING=true`; spec updated (`config.md`, `scoring.md`, `dev-guide.md`). Key commit
+`f22fdf9`. `make check` green, 92 tests (+2). Verified live: all 8 scenarios scored by `scorer=llm`,
+0 fallbacks, invariants pass against real LiteAPI + Nebius Token Factory. Deferred: cosmetic httpx
+"event loop closed" teardown trace; no thinking-off knob on the serverless-endpoint backend yet.
+
 ## Batch P1 — Evaluation harness and test scenarios
 Shipped a result-quality evaluation harness in `tests/eval/`: `scenarios.py` (an 8-scenario catalog
 of `HotelSearchRequest` + declarative `Expect`, provider-agnostic), `metrics.py`
