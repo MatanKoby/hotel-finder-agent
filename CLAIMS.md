@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch P2 — Result-quality improvements
+- Owner: claude
+- Started: 2026-07-13 17:39
+
 ## Completed
 
 ### Batch P6 — Live-eval wiring + LLM thinking-off toggle
