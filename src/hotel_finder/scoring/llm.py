@@ -82,6 +82,12 @@ class _OpenAIBackend:
             timeout=settings.llm_timeout,
         )
         self._model = settings.llm_model
+        # Disable a hybrid model's "thinking" pass (Qwen3 & co.); ignored by models without it.
+        self._extra_body: dict[str, object] = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if settings.llm_disable_thinking
+            else {}
+        )
 
     async def complete(self, messages: list[Message]) -> str:
         response = await self.client.chat.completions.create(
@@ -89,6 +95,7 @@ class _OpenAIBackend:
             messages=cast("list[ChatCompletionMessageParam]", messages),
             response_format={"type": "json_object"},
             temperature=0,
+            extra_body=self._extra_body or None,
         )
         return response.choices[0].message.content or ""
 

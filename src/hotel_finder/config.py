@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "llama-3.3-70b-versatile"
     llm_timeout: float = 30.0
+    # Hybrid-reasoning models (e.g. Qwen3) default to a verbose "thinking" pass that inflates
+    # latency and can break the JSON scorer. Set true to disable it on the OpenAI-compatible
+    # backend (sends chat_template_kwargs.enable_thinking=false); no-op on models without it.
+    llm_disable_thinking: bool = False
 
     # Which LLM transport to use: "auto" picks `endpoint` when NEBIUS_ENDPOINT_URL is set, else
     # `openai` when LLM_API_KEY is set, else the heuristic. Force with openai/endpoint.

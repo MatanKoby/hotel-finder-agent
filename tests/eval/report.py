@@ -1,14 +1,16 @@
 """Run the whole evaluation catalog and print a result-quality baseline table.
 
-This is the by-hand companion to ``test_eval_scenarios.py``: same scenarios, same offline mock +
-heuristic run, but instead of asserting it prints per-scenario metrics so a developer can *see* the
-baseline and watch it move. Batch P2 tunes against these numbers.
+This is the by-hand companion to ``test_eval_scenarios.py``: same scenarios, but instead of
+asserting it prints per-scenario metrics so a developer can *see* the baseline and watch it move.
+Batch P2 tunes against these numbers.
 
     make eval
     uv run python tests/eval/report.py
 
-Exits non-zero if any scenario breaks a contract invariant, so it can also gate CI. Point it at live
-data by editing ``scenarios.eval_settings`` (LiteAPI + LLM) — the catalog is provider-agnostic.
+Unlike the tests (which are pinned offline for determinism), this reads ``Settings()`` from the
+environment / ``.env``, so the same catalog runs against whatever is configured — the offline mock +
+heuristic by default, or real LiteAPI + an LLM scorer when those are set. Exits non-zero if any
+scenario breaks a contract invariant, so it can also gate CI.
 """
 
 from __future__ import annotations
@@ -20,15 +22,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from metrics import ScenarioMetrics, evaluate  # noqa: E402
-from scenarios import SCENARIOS, eval_settings  # noqa: E402
+from scenarios import SCENARIOS  # noqa: E402
 
-from hotel_finder import search_sync  # noqa: E402
+from hotel_finder import Settings, search_sync  # noqa: E402
 
-_COLUMNS = "  {name:<22} {status:<8} {lenses:>5} {picks:>7} {price:>5} {offers:>6} {coord:>5} "
-_COLUMNS += "{image:>5} {dist:>5} {ovb:>3} {wdn:>3} {warn:>4}"
+_COLUMNS = "  {name:<22} {status:<8} {scorer:<10} {lenses:>5} {picks:>7} {price:>5} {offers:>6} "
+_COLUMNS += "{coord:>5} {image:>5} {dist:>5} {ovb:>3} {wdn:>3} {warn:>4}"
 _HEADER = _COLUMNS.format(
     name="scenario",
     status="status",
+    scorer="scorer",
     lenses="lens",
     picks="picks",
     price="prc%",
@@ -50,6 +53,7 @@ def _row(m: ScenarioMetrics) -> str:
     return _COLUMNS.format(
         name=m.name,
         status=m.status,
+        scorer=m.scorer,
         lenses=f"{m.lenses_populated}/{m.lenses_total}",
         picks=f"{m.picks_total}/{m.picks_unique}",
         price=_pct(m.with_price, m.picks_total),
@@ -63,9 +67,8 @@ def _row(m: ScenarioMetrics) -> str:
     )
 
 
-def collect() -> list[ScenarioMetrics]:
-    """Run every scenario offline and return its metrics, in catalog order."""
-    settings = eval_settings()
+def collect(settings: Settings) -> list[ScenarioMetrics]:
+    """Run every scenario under ``settings`` and return its metrics, in catalog order."""
     results: list[ScenarioMetrics] = []
     for scenario in SCENARIOS:
         response = search_sync(scenario.request, settings)
@@ -74,8 +77,13 @@ def collect() -> list[ScenarioMetrics]:
 
 
 def main() -> int:
-    metrics = collect()
-    print("hotel-finder evaluation baseline (offline mock provider + heuristic scorer)\n")
+    settings = Settings()  # reads the environment / .env (offline mock + heuristic by default)
+    metrics = collect(settings)
+    print("hotel-finder evaluation baseline")
+    print(
+        f"  providers={settings.enabled_providers}  scorer={settings.scorer}  "
+        f"backend={settings.llm_backend}  model={settings.llm_model}\n"
+    )
     print(_HEADER)
     print("  " + "-" * (len(_HEADER) - 2))
     for m in metrics:

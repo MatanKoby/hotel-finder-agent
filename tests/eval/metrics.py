@@ -133,6 +133,7 @@ class ScenarioMetrics:
 
     name: str
     status: str
+    scorer: str  # the scorer that actually ran (heuristic on LLM fallback)
     stay_present: bool
     lenses_total: int
     lenses_populated: int
@@ -166,6 +167,7 @@ def evaluate(
     return ScenarioMetrics(
         name=name,
         status=response.agent_status,
+        scorer=diag.scorer,
         stay_present=request.stay is not None,
         lenses_total=len(lenses),
         lenses_populated=sum(1 for plist in lenses.values() if plist),

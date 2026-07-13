@@ -14,7 +14,7 @@ import pytest
 from hotel_finder.config import Settings
 from hotel_finder.context import SearchContext
 from hotel_finder.models import Hotel
-from hotel_finder.scoring.llm import LLMScorer
+from hotel_finder.scoring.llm import LLMScorer, _OpenAIBackend
 
 
 class _FakeBackend:
@@ -104,3 +104,38 @@ async def test_repair_retry_recovers(make_hotel: Callable[..., Hotel]) -> None:
     )
     assert {s.hotel.id for s in out} == {"h1", "h2"}
     assert scorer.report.scorer == "llm"
+
+
+class _RecordingCompletions:
+    """Captures the create() kwargs and returns a minimal completion-shaped object."""
+
+    def __init__(self) -> None:
+        self.kwargs: dict[str, object] = {}
+
+    async def create(self, **kwargs: object) -> object:
+        self.kwargs = kwargs
+        message = type("_Msg", (), {"content": '{"scores": []}'})()
+        choice = type("_Choice", (), {"message": message})()
+        return type("_Resp", (), {"choices": [choice]})()
+
+
+def _capture_openai_create(
+    **overrides: object,
+) -> tuple[_OpenAIBackend, _RecordingCompletions]:
+    """Build an ``_OpenAIBackend`` whose ``create()`` records its kwargs instead of hitting HTTP."""
+    backend = _OpenAIBackend(_settings(**overrides))
+    completions = _RecordingCompletions()
+    backend.client.chat.completions = completions  # type: ignore[assignment]
+    return backend, completions
+
+
+async def test_disable_thinking_sends_extra_body() -> None:
+    backend, completions = _capture_openai_create(llm_disable_thinking=True)
+    await backend.complete([{"role": "user", "content": "hi"}])
+    assert completions.kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+async def test_thinking_on_by_default_sends_no_extra_body() -> None:
+    backend, completions = _capture_openai_create()  # llm_disable_thinking defaults to False
+    await backend.complete([{"role": "user", "content": "hi"}])
+    assert completions.kwargs["extra_body"] is None
