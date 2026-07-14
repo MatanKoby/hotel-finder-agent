@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch P3 — ANCHOR intent (peers of a named hotel)
+- Owner: claude
+- Started: 2026-07-14 06:21
+
 ## Completed
 
 ### Batch P2 — Result-quality improvements
