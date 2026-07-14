@@ -10,7 +10,7 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from hotel_finder.contracts import Filters, HotelSearchRequest, Place, Stay
+from hotel_finder.contracts import Filters, HotelSearchRequest, Intent, Place, Stay
 
 
 def test_valid_request_builds_with_defaults() -> None:
@@ -49,3 +49,24 @@ def test_request_forbids_unknown_fields() -> None:
 def test_request_requires_place() -> None:
     with pytest.raises(ValidationError):
         HotelSearchRequest()  # type: ignore[call-arg]
+
+
+def test_anchor_intent_requires_anchor_hotel() -> None:
+    with pytest.raises(ValidationError):
+        HotelSearchRequest(place=Place(city="Barcelona"), intent=Intent.ANCHOR)
+    with pytest.raises(ValidationError):
+        HotelSearchRequest(place=Place(city="Barcelona"), intent=Intent.ANCHOR, anchor_hotel="  ")
+
+
+def test_anchor_intent_builds_with_a_named_hotel() -> None:
+    request = HotelSearchRequest(
+        place=Place(city="Barcelona"), intent=Intent.ANCHOR, anchor_hotel="Hotel Arts"
+    )
+    assert request.intent is Intent.ANCHOR
+    assert request.anchor_hotel == "Hotel Arts"
+
+
+def test_zone_default_leaves_anchor_inert() -> None:
+    request = HotelSearchRequest(place=Place(city="Barcelona"))
+    assert request.intent is Intent.ZONE
+    assert request.anchor_hotel is None

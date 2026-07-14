@@ -20,6 +20,7 @@ from hotel_finder.contracts import (
     Diagnostics,
     HotelSearchRequest,
     HotelSearchResponse,
+    Intent,
     LensName,
     Pick,
     RateOffer,
@@ -31,6 +32,7 @@ from hotel_finder.providers.registry import get_providers
 from hotel_finder.scoring import make_scorer
 from hotel_finder.scoring.base import ScoredHotel
 from hotel_finder.stages import lenses
+from hotel_finder.stages.anchor import anchor_envelope, find_anchor
 from hotel_finder.stages.dedupe import dedupe
 from hotel_finder.stages.explain import to_picks
 from hotel_finder.stages.filtering import FilterCriteria, hard_filter
@@ -48,12 +50,6 @@ async def search(
     warnings: list[str] = []
 
     resolved, request, filter_center = await _resolve(request, settings, warnings)
-    context = SearchContext(
-        center=resolved.center,  # the desired point: explicit centre, or a geocoded desired_area
-        desired_area=request.place.desired_area,
-        location_label=resolved.city or request.place.text,
-        filters=request.filters,
-    )
 
     providers = get_providers(settings.enabled_providers, settings)
     candidates = await _gather(providers, request, warnings)
@@ -61,7 +57,22 @@ async def search(
     candidates_found = len(candidates)
     candidates = [_with_price_band(h, settings) for h in candidates]
 
-    filtered, widened = _filter_with_widening(candidates, request, filter_center, settings)
+    # The hard-filter base is the request's own filters; ANCHOR intent tightens it to the peers of
+    # a named hotel (and re-centres ranking on it). Both feed the same widening + scoring path.
+    base = _base_criteria(request, filter_center, settings)
+    if request.intent is Intent.ANCHOR:
+        candidates, base, resolved = _apply_anchor(
+            request, candidates, base, resolved, settings, warnings
+        )
+
+    context = SearchContext(
+        center=resolved.center,  # the desired point: explicit centre, geocoded area, or the anchor
+        desired_area=request.place.desired_area,
+        location_label=resolved.city or request.place.text,
+        filters=request.filters,
+    )
+
+    filtered, widened = _filter_with_widening(candidates, base, settings)
     short = shortlist(filtered, context, settings.shortlist_size)
 
     scorer = make_scorer(settings)
@@ -179,6 +190,45 @@ async def _geocode_desired_area(
     return GeoPoint(lat=result.lat, lon=result.lon) if result is not None else None
 
 
+def _apply_anchor(
+    request: HotelSearchRequest,
+    candidates: list[Hotel],
+    base: FilterCriteria,
+    resolved: ResolvedQuery,
+    settings: Settings,
+    warnings: list[str],
+) -> tuple[list[Hotel], FilterCriteria, ResolvedQuery]:
+    """Constrain the search to peers of ``request.anchor_hotel`` (see ``stages/anchor.py``).
+
+    Locate the anchor among the discovered candidates, exclude it (it is the reference, not a
+    recommendation), and tighten ``base`` to its peer envelope; ranking re-centres on the anchor by
+    making it ``resolved.center``. On any miss (anchor not found, or too thin to constrain peers),
+    warn and return the zone inputs unchanged so the search degrades to a broad area search rather
+    than returning nothing — never crashes (see ``contract.md`` → Error philosophy).
+    """
+    where = resolved.city or request.place.text or "the requested area"
+    anchor = find_anchor(candidates, request.anchor_hotel or "")
+    if anchor is None:
+        warnings.append(
+            f"anchor hotel {request.anchor_hotel!r} not found near {where}; "
+            "searched the area broadly instead"
+        )
+        return candidates, base, resolved
+
+    envelope = anchor_envelope(anchor, settings)
+    if envelope.is_empty():
+        warnings.append(
+            f"anchor hotel {anchor.name!r} has too little data to match peers; "
+            "searched the area broadly instead"
+        )
+        return candidates, base, resolved
+
+    peers = [h for h in candidates if h.id != anchor.id]
+    if anchor.location is not None:
+        resolved = resolved.model_copy(update={"center": anchor.location})
+    return peers, envelope.to_criteria(base), resolved
+
+
 async def _gather(
     providers: list[HotelProvider], request: HotelSearchRequest, warnings: list[str]
 ) -> list[Hotel]:
@@ -227,11 +277,11 @@ def _base_criteria(
 
 def _filter_with_widening(
     candidates: list[Hotel],
-    request: HotelSearchRequest,
-    center: GeoPoint | None,
+    base: FilterCriteria,
     settings: Settings,
 ) -> tuple[list[Hotel], bool]:
-    """Hard-filter; if too few survive, relax **soft** constraints with a capped retry.
+    """Hard-filter against ``base``; if too few survive, relax **soft** constraints with a capped
+    retry.
 
     Must-have amenities and quality bounds (min_star / min_guest_rating) are never relaxed. Widening
     grows the area radius every step; on price it is **gentle** — the middle steps widen the price
@@ -239,7 +289,6 @@ def _filter_with_widening(
     the whole city), and only the **final** step drops the bounds entirely to guarantee the
     budget-too-low fallback still returns something. A fixed loop with a cap, not the LLM deciding.
     """
-    base = _base_criteria(request, center, settings)
     filtered = hard_filter(candidates, base)
     if len(filtered) >= settings.min_candidates:
         return filtered, False

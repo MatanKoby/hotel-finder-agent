@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     widen_radius_km: float = 3.0  # how much to grow the area radius per widen step
     widen_price_factor: float = 0.5  # fractional price-band widening per middle widen step
 
+    # --- ANCHOR intent (peers of a named hotel; see pipeline.md → Anchor intent) ---
+    anchor_radius_km: float = 3.0  # peers must sit within this radius of the anchor hotel
+    anchor_price_low_factor: float = 0.6  # peer price floor = anchor price * this
+    anchor_price_high_factor: float = 1.6  # peer price ceiling = anchor price * this
+    anchor_star_tolerance: int = 1  # peers may be up to this many stars below the anchor's class
+    anchor_rating_tolerance: float = 1.0  # peers may be this far below the anchor's guest score
+
     # --- price-band cutoffs (per-night, in the dominant currency; v1 mock uses EUR) ---
     band_budget_max: float = 90.0
     band_midrange_max: float = 180.0

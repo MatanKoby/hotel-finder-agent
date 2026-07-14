@@ -23,10 +23,10 @@ from hotel_finder.models import Amenity, GeoPoint
 
 
 class Intent(StrEnum):
-    """What kind of request this is. Only ZONE is fully handled today."""
+    """What kind of request this is. Both ZONE and ANCHOR are handled (see ``pipeline.md``)."""
 
     ZONE = "zone"  # "find me somewhere in this area" — broad search, then organize
-    ANCHOR = "anchor"  # "I heard X is good" — peers of a named hotel (reserved for later)
+    ANCHOR = "anchor"  # "I heard X is good" — peers of a named hotel (needs ``anchor_hotel``)
 
 
 class LensName(StrEnum):
@@ -128,10 +128,17 @@ class HotelSearchRequest(BaseModel):
     filters: Filters = Field(default_factory=Filters)
     lenses: list[LensName] | None = None  # None means all three
     picks_per_lens: int = Field(default=3, ge=1)
-    # intent / anchor_hotel are not part of the M1 wire contract; they carry inert defaults so the
-    # wire shape is stable whether or not the orchestrator sets them (re-documented in Batch P3).
+    # intent / anchor_hotel are a pair. Default ZONE leaves anchor_hotel inert (the common path), so
+    # the wire shape is stable whether or not the orchestrator sets them. intent=ANCHOR means "find
+    # peers of anchor_hotel" (see pipeline.md → Anchor intent) and requires a non-empty name.
     intent: Intent = Intent.ZONE
-    anchor_hotel: str | None = None  # for ANCHOR intent (reserved)
+    anchor_hotel: str | None = None  # the named hotel whose peers to find, when intent=ANCHOR
+
+    @model_validator(mode="after")
+    def _validate_anchor(self) -> HotelSearchRequest:
+        if self.intent is Intent.ANCHOR and not (self.anchor_hotel and self.anchor_hotel.strip()):
+            raise ValueError("intent=anchor requires a non-empty anchor_hotel")
+        return self
 
 
 # --- response --------------------------------------------------------------------------------
