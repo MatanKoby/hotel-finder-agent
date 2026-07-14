@@ -30,6 +30,10 @@ LLM: the sequence is fixed and known up front, which is what keeps the agent eva
 8. **Lenses** (`stages/lenses.py`) — project the one scored set three ways.
 9. **Explain** (`stages/explain.py`) — `ScoredHotel → Pick` (+ coordinates, offers) → `HotelSearchResponse`.
 
+`intent = anchor` (see `contract.md`) inserts a **peer-resolution** step between 4 and 5 that
+constrains the search to peers of a named hotel — see Anchor intent below. Everything else is
+unchanged; `intent = zone` (the default) skips it.
+
 ## Dedupe (`stages/dedupe.py`)
 
 Two records are the same hotel when `normalize_text(name)` is equal **and** (if both have
@@ -57,6 +61,31 @@ price factor come from `config.md`.
 fit `price_max`), those hotels are the budget-too-low fallback from `contract.md` → Budget and
 offers: their offers are flagged `over_budget = True`, `agent_status` becomes `degraded`, and a
 `warning` records the price floor. Within budget, over-budget hotels are not returned at all.
+
+## Anchor intent (`stages/anchor.py`)
+
+`intent = anchor` (with `anchor_hotel`, see `contract.md`) searches for **peers of a named hotel**
+instead of a broad area. The request still carries a `place` (the anchor's city/area), so the
+pipeline discovers the usual candidate set first (steps 2–4), then, before the hard filter:
+
+1. **Locate** the anchor among the candidates by normalized name (`find_anchor`): an exact match
+   wins, else a **unique** containment match (either direction, so "Hotel Arts" finds "Hotel Arts
+   Barcelona"). An ambiguous or absent match falls back (below).
+2. **Derive a peer envelope** (`anchor_envelope`) from the anchor: proximity (its coords +
+   `anchor_radius_km`), a price window around its price (`anchor_price_low_factor` ..
+   `anchor_price_high_factor`), and star / guest-rating floors near its class (`anchor_star_tolerance`
+   / `anchor_rating_tolerance`). Cutoffs are in `config.md`; a missing anchor attribute drops just
+   that dimension.
+3. The envelope only ever **tightens** the request's own `Filters` (the stricter bound wins; must-have
+   amenities pass through) and becomes the filter base for the widening step. The anchor is
+   **excluded** from the results (it is the reference, not a recommendation), and ranking re-centres
+   on it: the anchor's location becomes `resolved.center`, so the shortlist proximity bias and
+   `distance_to_desired_km` measure distance **from the anchor**.
+
+**Fallback (never crash).** If the anchor can't be found, or is too thin to constrain peers (no
+coords/price/star/rating), the pipeline adds a `warning`, sets `agent_status = degraded`, and runs a
+broad **zone** search over the same candidates — a degenerate outcome is data the orchestrator reads,
+not an exception (`contract.md` → Error philosophy).
 
 ## Shortlist (`stages/shortlist.py`)
 

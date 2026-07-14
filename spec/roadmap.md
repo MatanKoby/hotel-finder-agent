@@ -67,8 +67,9 @@ catalogued in `data-sources.md` → Future direction and to be broken into batch
 - **Real geocoding**: turn `desired_area`/`location` strings into a `center` GeoPoint so
   distance filtering and ranking are exact rather than name-match (touches `pipeline.md` filter
   and shortlist stages). **Now pulled into Milestone 1 above** (via free Nominatim).
-- **`ANCHOR` intent** — resolve a named hotel → its band/area/rating, then find peers within
-  that envelope. The field is already reserved on `HotelSearchRequest` (see `contract.md`).
+- ~~**`ANCHOR` intent**~~ — **done (P3):** resolve a named hotel to a peer envelope (proximity +
+  price window + star/rating floors), exclude it, and return peers; broad-zone fallback when the
+  anchor is unresolved. See `pipeline.md` → Anchor intent and `contract.md` → intent/anchor_hotel.
 - **Booking flow (LiteAPI prebook / book / retrieve / cancel).** LiteAPI supports it off the rate
   `offerId`, but M1 (and v1) is read-only recommendation. Noted for the future in
   `data-sources.md` → LiteAPI. Out of scope now.

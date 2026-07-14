@@ -25,6 +25,10 @@ the provider set (`providers.md`).
 | `max_widen_steps` | `3` | `MAX_WIDEN_STEPS` |
 | `widen_radius_km` | `3.0` | `WIDEN_RADIUS_KM` |
 | `widen_price_factor` | `0.5` (fractional price-band widening per middle widen step) | `WIDEN_PRICE_FACTOR` |
+| `anchor_radius_km` | `3.0` (ANCHOR: peers within this radius of the anchor) | `ANCHOR_RADIUS_KM` |
+| `anchor_price_low_factor` / `anchor_price_high_factor` | `0.6 / 1.6` (ANCHOR: peer price window = anchor price × these) | resp. |
+| `anchor_star_tolerance` | `1` (ANCHOR: peers may be this many stars below the anchor) | `ANCHOR_STAR_TOLERANCE` |
+| `anchor_rating_tolerance` | `1.0` (ANCHOR: peers may be this far below the anchor's guest score) | `ANCHOR_RATING_TOLERANCE` |
 | `band_budget_max` / `band_midrange_max` / `band_upscale_max` | `90 / 180 / 350` (EUR/night) | resp. |
 
 ## LLM run modes (Nebius)
@@ -63,3 +67,9 @@ policy the pipeline applies in step 4; adapters do not derive bands.
 
 The price-band cutoffs (and the pipeline thresholds above) are reasonable starting values, not
 tuned; revisiting them is tracked in `roadmap.md`.
+
+## Anchor intent knobs
+
+The `anchor_*` settings shape the peer envelope for `intent = anchor`; their exact roles (proximity,
+price window, class floors, and how they intersect the request's own filters) live in
+`pipeline.md` → Anchor intent. Like the rest, they are starting values, not tuned.

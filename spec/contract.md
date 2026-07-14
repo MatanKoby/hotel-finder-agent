@@ -50,10 +50,19 @@ transport `status = ok`.
 - `lenses: list[LensName] | None = None` (None means all three)
 - `picks_per_lens: int = 3` (ge=1)
 
-`intent` / `anchor_hotel` are **not part of the M1 wire contract.** They still exist on the model
-with inert defaults (`intent = zone`, `anchor_hotel = None`), so the wire shape is stable whether or
-not the orchestrator sets them; the orchestrator simply doesn't. They get **re-documented as a pair**
-when the `anchor` intent is specced (see `roadmap.md`, Batch P3 in `BUILD_QUEUE.md`).
+### `intent` / `anchor_hotel` (the search mode) — a pair
+
+- `intent: Intent = zone` — `zone` (default) is "find me somewhere in this area"; `anchor` is
+  "find me peers of a named hotel".
+- `anchor_hotel: str | None = None` — the hotel whose peers to find, used **only** when
+  `intent = anchor`.
+
+The default (`zone` / `None`) is the common path and leaves `anchor_hotel` inert, so the wire shape
+is stable whether or not the orchestrator sets the pair. `intent = anchor` resolves `anchor_hotel`
+and returns comparable hotels near it (the peer envelope + exclusion + fallback are described in
+`pipeline.md` → Anchor intent). It **requires** a non-empty `anchor_hotel`: the shared validator
+raises `ValidationError` at construction otherwise (an anchor request with no name is an
+orchestrator bug, caught at the edge like the other validations above).
 
 ### `Place` (where to search) — accepts structured **and** free text
 
