@@ -9,7 +9,12 @@ LLM: the sequence is fixed and known up front, which is what keeps the agent eva
 
 1. **Resolve** — input is a structured `HotelSearchRequest` (see `contract.md`); resolve `Place`
    (structured passthrough, or geocode `text`) into a country/city and/or `center`, recorded in
-   `HotelSearchResponse.resolved`. A geocode failure warns and proceeds (M1c).
+   `HotelSearchResponse.resolved`. A geocode failure warns and proceeds (M1c). Two distinct centres
+   fall out: the **filter centre** (explicit `place.center` or geocoded free text) bounds the hard
+   radius filter and provider discovery; the **desired point** — the filter centre, or else a
+   geocoded `desired_area` (`geocode_desired_area`, `config.md`) — is what ranking and
+   `distance_to_desired_km` measure against. A geocoded neighbourhood is a **soft ranking bias**,
+   never a hard radius (so a miss is silent, not a warning), and becomes `resolved.center`.
 2. **Gather** — `asyncio.gather(*providers.search(query), return_exceptions=True)`. A provider
    that errors is **logged and skipped**, never fatal. (Providers: `providers.md`.)
 3. **Merge + dedupe** (`stages/dedupe.py`) — same hotel from different providers collapsed.
@@ -40,9 +45,13 @@ price is excluded when a bound is set**); and (if `center` + `radius_km` given) 
 radius (hotels without coords excluded).
 
 Widening (`_filter_with_widening`): if survivors are below `min_candidates`, relax **soft**
-constraints with a capped retry (step 0: grow area radius; step 1: drop price bounds). Must-have
-amenities are **never** relaxed. This is a fixed `if` + cap, not the LLM deciding, which
-preserves evaluability. Caps and radius come from `config.md`.
+constraints with a capped retry. Every step grows the area radius; on price it is **gentle** — step
+0 keeps the bounds, middle steps widen the price band by `widen_price_factor` (a slightly-too-low
+budget then recovers with hotels near it, not the whole city), and only the **final** step drops
+the price bounds entirely, guaranteeing the budget-too-low fallback still returns something.
+Must-have amenities and quality bounds (`min_star` / `min_guest_rating`) are **never** relaxed. This
+is a fixed loop + cap, not the LLM deciding, which preserves evaluability. Caps, radius, and the
+price factor come from `config.md`.
 
 **Budget fallback.** When it is the price-bound relaxation that brought candidates back (nothing
 fit `price_max`), those hotels are the budget-too-low fallback from `contract.md` → Budget and
@@ -62,9 +71,14 @@ Pure functions over `list[ScoredHotel]` (`LensName` members in `contract.md`):
 
 - `stratified_best(scored, per_band=1)` — top `per_band` from each band, emitted in fixed
   budget→luxury order (absent bands skipped). The pipeline calls it with `per_band=1` (top of
-  each tier → budget coverage).
+  each tier → budget coverage). When **no** candidate has a price band (a content-only search with
+  no live rates), it falls back to stratifying by **star tier** (highest first, capped to the band
+  count so the pick cap holds), and to top-overall if even stars are missing, so the lens still
+  fills (P1/P6 finding 1).
 - `overall_standouts(scored, k)` — top `k` by overall score (tiers ignored).
 - `hidden_gems(scored, k, min_gem=0.4)` — hotels with `gem_signal >= 0.4`, sorted by gem signal.
+  Can be empty on real data (popular-city hotels are well-reviewed, so few clear the gem bar); the
+  bar stays conservative rather than dilute the "under-the-radar" meaning.
 
 ## Explain (`stages/explain.py`)
 
@@ -74,5 +88,7 @@ maps the scorer's `subscores → why`, **surfaces** `name` / `area` / `price_per
 the hotel, sets `coordinates = hotel.location`, computes `distance_to_desired_km` (`haversine` to
 `resolved.center` / the desired-area point via `utils/geo.py`, else `None`), and attaches the hotel's
 `offers` (cheapest refundable + cheapest non-refundable, per `contract.md` → Budget and offers). The
-pipeline also sets `agent_status`, `warnings`, `resolved` (incl. `area`), and `diagnostics` on the
-response.
+`rationale` is **lens-aware**: the scorer's sentence plus a short clause for *why this projection*
+(its price tier under `stratified_best`, a gem framing under `hidden_gems`), never contradicting the
+scorer. The pipeline also sets `agent_status`, `warnings`, `resolved` (incl. `area`), and
+`diagnostics` on the response.

@@ -21,13 +21,19 @@ overall is computed locally for consistency.
 
 - **value** = `0.7*(rating/10) + 0.3*affordability`, where affordability = `1 − price_norm`
   (price normalized within the shortlist's min/max; `0.5` if there is no price spread).
-- **location** = `1 − dist/5km` (if `center` set), else `1.0 / 0.5` for desired-area
-  match/non-match, else `0.6` neutral.
+- **location** = `1 − dist/5km` when there is a `center` (the desired point — an explicit centre or
+  a geocoded `desired_area`, see `pipeline.md` → Resolve). With no `center` it is a **graded**
+  name-only affinity (a flat match/non-match barely ranked): `1.0` exact/substring area match, a
+  partial credit `0.55–0.9` on shared significant words (short articles like "el"/"la" ignored),
+  `0.35` for a known-different neighbourhood (below the `0.6` no-signal neutral so the wanted area
+  rises).
 - **character** = `0.5*(len(amenities)/8) + 0.4*(stars/5) + 0.1*(has description)`.
 - **gem_signal** = `rating_factor * scarcity * value`, with `rating_factor = clamp((rating−8)/2)`
   and `scarcity = clamp(1 − reviews/300)` (`0.5` if review_count unknown). The **product** means
   a gem must be highly rated **and** under-the-radar **and** a good value.
-- **rationale** — a short deterministic sentence assembled from the strongest components.
+- **rationale** — a short deterministic sentence assembled from the strongest components. The
+  "few reviews" gem phrasing is only used when `review_count` is **known and low** (≤150), so the
+  sentence never contradicts a well-reviewed hotel (P1/P6 finding 5).
 
 ## `LLMScorer` (opt-in)
 
@@ -36,6 +42,12 @@ Builds **one** prompt with a compact JSON of the shortlist plus query context; a
 validates with Pydantic; **one repair retry** on bad JSON. It **falls back to `HeuristicScorer`**
 (and adds a `warning`, see `contract.md`) if: no LLM is configured, the LLM is unreachable, any
 exception, or the response omits any hotel id. Overall is computed locally.
+
+Each hotel in the payload carries **grounded location signals** — `coordinates`,
+`distance_to_desired_km` (haversine to the desired point), and `in_desired_area` — and the prompt
+tells the model to score `location` from them rather than guessing from the name (P1/P6 finding 4:
+an ungrounded `location` gave `1.00` to every hotel). It is also told not to call a hotel a gem
+when `review_count` is high or unknown.
 
 **Two LLM backends**, both contacted by this repo, selected by `llm_backend` / env (`config.md`):
 

@@ -80,27 +80,29 @@ catalogued in `data-sources.md` → Future direction and to be broken into batch
 ## Baseline findings (P1/P6 live eval, 2026-07-13)
 
 Concrete result-quality gaps observed running the `tests/eval/` catalog live against real LiteAPI
-Barcelona hotels + Nebius Token Factory (`Qwen/Qwen3-32B`, thinking off). These are the inputs to
-**Batch P2** (`BUILD_QUEUE.md`); re-measure any fix with `make eval`.
+Barcelona hotels + Nebius Token Factory (`Qwen/Qwen3-32B`, thinking off). These were the inputs to
+**Batch P2** (`BUILD_QUEUE.md`); re-measure any fix with `make eval`. **Items 1–5 are addressed by
+Batch P2** (see `specflow/history/BUILD_QUEUE_DONE.md`); item 6 remains open.
 
-1. **Content-only empties `stratified_best`.** With no `stay` there are no prices → no price bands →
-   the price-stratified lens returns 0 picks (only 2 of 3 lenses fill). Wants a fallback tier (e.g.
-   star rating) when prices are absent — `stages/lenses.py`.
-2. **The neighbourhood bias barely ranks.** The heuristic `location` is a flat `0.50` for every
-   hotel when no `center` is given and the `desired_area` isn't a literal name match, so "El Born" /
-   "Gràcia" hardly move the ranking — `scoring.md` (heuristic location) + geocoding `desired_area`
-   to a `center` in `pipeline.py`.
-3. **Distance is measured only for explicit-centre requests.** `distance_to_desired_km` is populated
-   for `geo_center` but `None` for the area-string scenarios (see item 2 — same geocode fix) —
-   `pipeline.py` / `utils/geocode.py`.
-4. **The LLM `location` subscore is ungrounded.** `_hotel_payload` sends no coordinates/distance, so
-   the model guesses (gave `location=1.00` to every hotel in one scenario). Feed it the computed
-   distance / area fit — `scoring/llm.py`.
-5. **Hidden gems are thin and rationales can self-contradict** ("under-the-radar with many reviews").
-   Revisit the gem thresholds and add lens-aware rationale phrasing — `scoring.md` gem signal +
-   `stages/explain.py`.
-6. **Only structure is asserted, not semantics.** The harness proves results are well-formed, not
-   that the ranking/rationales are *good* — a future eval extension could add quality metrics.
+1. ~~**Content-only empties `stratified_best`.**~~ **Fixed (P2):** a star-tier fallback fills the
+   lens when no candidate has a price band (verified live: content-only now fills stratified_best) —
+   `stages/lenses.py`, `pipeline.md` → Lenses.
+2. ~~**The neighbourhood bias barely ranks.**~~ **Fixed (P2):** `desired_area` geocodes to a ranking
+   point (a soft bias, not a hard filter), and the heuristic name-only `location` is now graded, not
+   a flat match/non-match — `pipeline.py` → Resolve, `scoring.md` → heuristic location.
+3. ~~**Distance measured only for explicit-centre requests.**~~ **Fixed (P2):** the geocoded desired
+   point populates `distance_to_desired_km` for area-string scenarios too (verified: `dst%` 100% for
+   the zone/content scenarios) — `pipeline.py`.
+4. ~~**The LLM `location` subscore is ungrounded.**~~ **Fixed (P2):** `_hotel_payload` now feeds
+   `coordinates` + `distance_to_desired_km` + `in_desired_area` and the prompt scores from them
+   (verified live: `location` tracks distance, no longer `1.00` for all) — `scoring/llm.py`.
+5. ~~**Rationales can self-contradict; gems thin.**~~ **Partly fixed (P2):** the "few reviews" gem
+   phrasing is gated on a known-low `review_count`, the LLM is told not to gem-label well-reviewed
+   hotels, and rationales are lens-aware — `scoring/heuristic.py`, `stages/explain.py`, `scoring.md`.
+   The **thinness** is largely inherent: a popular city's hotels are well-reviewed, so few clear the
+   "under-the-radar" bar; the bar stays conservative by design rather than dilute the concept.
+6. **Only structure is asserted, not semantics** (open). The harness proves results are well-formed,
+   not that the ranking/rationales are *good* — a future eval extension could add quality metrics.
 
 **Operational (not P2):** the LLM path has unstable latency — `Qwen3-32B` intermittently times out
 even with thinking off (~1 min/scenario), degrading that scenario to the heuristic (visible in the
@@ -110,7 +112,9 @@ to the LLM, or running scenarios in parallel. Track separately from result quali
 ## Open considerations to revisit
 
 - The heuristic weightings/thresholds (`scoring.md`) and price-band cutoffs (`config.md`) are
-  reasonable starting values, not tuned.
-- Widening currently **drops** price bounds entirely on step 2; gentler relaxation (e.g. widen
-  the band) is possible (see `pipeline.md` → Filter + widening).
+  reasonable starting values, still **not tuned** — safe tuning wants the semantic eval of finding 6
+  (a ground truth to measure against) rather than blind number changes.
+- ~~Widening drops price bounds entirely~~ — **addressed (P2):** widening is now gentle (middle
+  steps widen the band by `widen_price_factor`, only the final step drops the bounds); see
+  `pipeline.md` → Filter + widening.
 - The mock `api.py` ignores the query and returns its whole fixture city (see `providers.md`).

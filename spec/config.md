@@ -19,10 +19,12 @@ the provider set (`providers.md`).
 | `nebius_endpoint_model` | `""` (auto-discovered via `/api/tags`) | `NEBIUS_ENDPOINT_MODEL` |
 | `liteapi_api_key` | `""` | `LITEAPI_API_KEY` |
 | `liteapi_base_url` | `https://api.liteapi.travel/v3.0` | `LITEAPI_BASE_URL` |
+| `geocode_desired_area` | `true` (geocode `desired_area` into a ranking point; off in offline tests) | `GEOCODE_DESIRED_AREA` |
 | `min_candidates` | `8` | `MIN_CANDIDATES` |
 | `shortlist_size` | `15` | `SHORTLIST_SIZE` |
-| `max_widen_steps` | `2` | `MAX_WIDEN_STEPS` |
+| `max_widen_steps` | `3` | `MAX_WIDEN_STEPS` |
 | `widen_radius_km` | `3.0` | `WIDEN_RADIUS_KM` |
+| `widen_price_factor` | `0.5` (fractional price-band widening per middle widen step) | `WIDEN_PRICE_FACTOR` |
 | `band_budget_max` / `band_midrange_max` / `band_upscale_max` | `90 / 180 / 350` (EUR/night) | resp. |
 
 ## LLM run modes (Nebius)
