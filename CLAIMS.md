@@ -19,11 +19,53 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch P2 — Result-quality improvements
 - Owner: claude
 - Started: 2026-07-13 17:39
+- Finished: 2026-07-14 05:06
+- Commit: fb83c93
 
-## Completed
+**What shipped.** The P1/P6 live-eval findings (`spec/roadmap.md` → Baseline findings), items 1-5.
+(1) **Star-tier lens fallback** — `stratified_best` (`stages/lenses.py`) stratifies by **star tier**
+(highest first, capped to `len(PriceBand)` so the pick cap holds; top-overall if stars are also
+absent) when **no** candidate has a price band, so a content-only search (no rates → no bands) still
+fills the lens. (2) **Desired-area ranking point** — `_resolve` (`pipeline.py`) now distinguishes a
+**filter centre** (explicit `place.center` / geocoded free text; bounds the hard radius + provider
+discovery) from a **desired point** (the filter centre, else a geocoded `desired_area`); the desired
+point is a **soft ranking bias, never a hard radius**, becomes `resolved.center`, and drives
+proximity ranking + `distance_to_desired_km` for area-string searches. New
+`Settings.geocode_desired_area` (default on; **off in `eval_settings()`** so `make check` stays
+network-free, exercising the area-string fallback offline). (3) **Graded heuristic location**
+(`scoring/heuristic.py`) — name-only fit is exact(1.0)/partial-word(0.55-0.9)/different(0.35, below
+the 0.6 no-signal neutral), not a flat 1.0/0.5. (4) **Grounded LLM location** (`scoring/llm.py`) —
+`_hotel_payload` feeds `coordinates` + `distance_to_desired_km` + `in_desired_area` and the prompt
+scores `location` from them instead of guessing. (5) **Honest gem rationale** — the "few reviews"
+phrasing is gated on a known-low `review_count`; the LLM is told not to gem-label well-reviewed
+hotels; rationales are **lens-aware** (price tier under `stratified_best`, gem framing under
+`hidden_gems`) in `stages/explain.py`. **Gentle widening** (`pipeline.py`) — middle steps widen the
+price band by `widen_price_factor` (0.5), only the final step drops the bounds (preserves the
+budget-too-low fallback); `max_widen_steps` 2→3, `WIDEN_PRICE_FACTOR` added. Spec: `scoring.md`,
+`config.md`, `pipeline.md`, `roadmap.md` (commit `85eb32b`).
+
+**Verification.** `make check` green (ruff + mypy strict; **pytest 105 passed, +15**). Re-measured
+with `make eval`: offline-hermetic table matches the prior baseline (no regression); with
+`geocode_desired_area` on the zone/content scenarios now report `dst%=100%`. **Verified live**
+against real LiteAPI Barcelona + Nebius Token Factory (`Qwen/Qwen3-32B`, thinking off):
+content-only now fills `stratified_best` via star tiers (5/4/3-star spread), and the LLM `location`
+subscore tracks distance (0.9@0.2km, 0.8@0.8km, 0.8@1.0km) instead of a flat `1.00` for every hotel.
+
+**Deferred / notes.** Finding 6 (semantic/quality eval, not just structure) stays open. The
+heuristic weightings and price-band cutoffs remain **untuned** on purpose — safe tuning wants the
+finding-6 ground truth, not blind number changes. `hidden_gems` is often empty on real data
+(popular-city hotels are well-reviewed → few clear the "under-the-radar" bar); the bar stays
+conservative by design. The LLM-latency/timeout issue is operational (tracked in `roadmap.md`), not
+part of P2. `.env` here pins a non-existent `Qwen/Qwen2.5-32B-Instruct`; live LLM runs need
+`LLM_MODEL=Qwen/Qwen3-32B` + `LLM_DISABLE_THINKING=true` (per P6). Next open work: **P3** (anchor
+intent), **P4** (more sources), **P5** (web-search backup) — each open-scope, needs a `spec-edit`
+first; plus the two long-standing M1 flags (`filters.property_types` unenforced, `over_budget`
+per-night vs total). `dev` pushed to `origin/dev`.
 
 ### Batch P6 — Live-eval wiring + LLM thinking-off toggle
 - Owner: claude

@@ -10,6 +10,23 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch P2 — Result-quality improvements
+Addressed the P1/P6 live-eval findings (`spec/roadmap.md` items 1-5). `stratified_best`
+(`stages/lenses.py`) falls back to **star tiers** when no candidate has a price band, so a
+content-only search (no rates) still fills the lens. `_resolve` (`pipeline.py`) now separates the
+**filter centre** from a **desired point** (the filter centre, else a geocoded `desired_area`), a
+soft ranking bias (not a hard radius) that drives proximity ranking + `distance_to_desired_km` for
+area-string searches — new `Settings.geocode_desired_area` (off in offline eval for hermetic tests).
+The heuristic name-only `location` is graded (exact/partial-word/different) not flat; the LLM payload
+carries `coordinates` + `distance_to_desired_km` + `in_desired_area` and the prompt scores from them.
+The "few reviews" gem rationale is gated on a known-low `review_count`, the LLM is told not to
+gem-label well-reviewed hotels, and rationales are lens-aware (`stages/explain.py`). Price widening is
+now gentle (middle steps widen the band by `widen_price_factor`, only the final step drops the
+bounds; `max_widen_steps` 2→3). Key commits `fb83c93` (code) + `85eb32b` (spec). `make check` green,
+105 tests (+15). Verified live (LiteAPI + Qwen3-32B): content-only fills stratified_best via star
+tiers; LLM `location` tracks distance instead of a flat 1.00. Open: finding 6 (semantic eval);
+untuned weightings/cutoffs left deliberately until that ground truth exists.
+
 ## Batch P6 — Live-eval wiring + LLM thinking-off toggle
 Made `make eval` real-config-aware and reached the closest-to-orchestrator LLM. `tests/eval/report.py`
 now reads `Settings()` from the environment / `.env` (was pinned offline) so the catalog runs live

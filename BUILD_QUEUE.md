@@ -36,13 +36,15 @@ scoring with heuristic fallback, free-text geocoding, no mandatory `.env`, no cr
 batches below are **post-M1** (evaluation and quality).
 
 > **Pick-order pointer for "continue".** M1 is done, the **contract reshape (C1 + C2)** shipped, the
-> **evaluation harness (P1)** shipped, and its **live-run wiring + LLM thinking-off toggle (P6)**
-> shipped — `make eval` now runs the catalog against real LiteAPI + a Nebius LLM (verified live with
-> `Qwen/Qwen3-32B`), or offline by default (see `CLAIMS.md` → Completed).
-> The next work is **P2** (result quality) — it now has the P1 baseline to measure against; P3/P4/P5
-> are open-scope and need a `spec-edit` first. Two M1 correctness flags are also still open (each
-> needs a `spec-edit` first): `filters.property_types` is accepted but unenforced, and `over_budget`
-> is computed per-night while `spec/contract.md` phrases the budget as a total. Claim via
+> **evaluation harness (P1)** shipped, its **live-run wiring + LLM thinking-off toggle (P6)** shipped,
+> and the **result-quality pass (P2)** shipped (findings 1-5: star-tier lens fallback, desired-area
+> ranking point, grounded heuristic/LLM location, honest gem rationales, gentle price widening — see
+> `CLAIMS.md` → Completed).
+> The remaining batches — **P3** (anchor intent), **P4** (more sources), **P5** (web-search backup) —
+> are all **open-scope** and need a `spec-edit` first. Two M1 correctness flags are also still open
+> (each needs a `spec-edit` first): `filters.property_types` is accepted but unenforced, and
+> `over_budget` is computed per-night while `spec/contract.md` phrases the budget as a total. Eval
+> finding 6 (semantic/quality metrics, not just structure) is also open. Claim via
 > `specflow/procedures/claim-batch.md`, record in `CLAIMS.md`, `make check` as the gate.
 
 ---
@@ -50,20 +52,6 @@ batches below are **post-M1** (evaluation and quality).
 ## Post-M1 batches (testing, evaluation, quality)
 
 Out of scope for M1; unblock after it lands. M1 ships the capability; these make it work *well*.
-
-### Batch P2 — Result-quality improvements
-
-**Depends on:** P1 (a baseline to measure against). **Start from the concrete gaps in
-`spec/roadmap.md` → *Baseline findings (P1/P6 live eval)*** — that list is the prioritized to-fix
-set observed running `make eval` live, and each item names the file it touches. In short: a
-star-tier fallback for `stratified_best` when prices are absent (`stages/lenses.py`); geocode
-`desired_area` to a `center` so the neighbourhood bias and `distance_to_desired_km` actually work
-(`pipeline.py`); feed the LLM real distance/area fit (`scoring/llm.py`); revisit gem thresholds and
-add lens-aware rationales (`spec/scoring.md`, `stages/explain.py`); and tune the untuned defaults
-(heuristic weightings `spec/scoring.md`, price-band cutoffs `spec/config.md`, gentler filter
-widening `spec/pipeline.md`). **Re-measure every change with `make eval`** and keep the contract
-invariants green. (The LLM-latency/timeout issue is operational, tracked separately in the
-findings, not part of P2.)
 
 ### Batch P3 — `ANCHOR` intent (peers of a named hotel)
 
