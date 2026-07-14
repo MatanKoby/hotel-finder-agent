@@ -90,6 +90,20 @@ async def test_budget_too_low_fallback_degrades_and_flags_offers() -> None:
     assert any(o.over_budget for o in all_offers)  # the fallback flags the over-budget rates
 
 
+async def test_gentle_price_widening_stops_before_dumping_the_whole_city() -> None:
+    # price_max=100 leaves 5 candidates (< 8); the gentle x1.5 step recovers with 8 near-budget
+    # hotels instead of dropping all price discipline (the E480 luxury palace stays excluded).
+    request = HotelSearchRequest(
+        place=Place(city="Barcelona"), stay=_stay(), filters=Filters(price_max=100.0)
+    )
+    response = await search(request, _settings(min_candidates=8))
+
+    assert response.diagnostics.widened is True
+    assert response.diagnostics.candidates_after_filter == 8  # not the full 14
+    picks = [p for picks in response.lenses.values() for p in picks]
+    assert picks and max(p.price_per_night for p in picks if p.price_per_night is not None) <= 150
+
+
 async def test_bounded_agency_widening_content_only() -> None:
     # A tight price cap leaves only 2 candidates (< min_candidates) -> widening kicks in.
     request = HotelSearchRequest(place=Place(city="Barcelona"), filters=Filters(price_max=62.0))

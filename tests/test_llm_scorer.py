@@ -13,8 +13,8 @@ import pytest
 
 from hotel_finder.config import Settings
 from hotel_finder.context import SearchContext
-from hotel_finder.models import Hotel
-from hotel_finder.scoring.llm import LLMScorer, _OpenAIBackend
+from hotel_finder.models import GeoPoint, Hotel
+from hotel_finder.scoring.llm import LLMScorer, _hotel_payload, _OpenAIBackend
 
 
 class _FakeBackend:
@@ -104,6 +104,48 @@ async def test_repair_retry_recovers(make_hotel: Callable[..., Hotel]) -> None:
     )
     assert {s.hotel.id for s in out} == {"h1", "h2"}
     assert scorer.report.scorer == "llm"
+
+
+def test_hotel_payload_grounds_location(make_hotel: Callable[..., Hotel]) -> None:
+    center = GeoPoint(lat=41.385, lon=2.181)
+    hotel = make_hotel(id="h1", area="El Born", location=GeoPoint(lat=41.386, lon=2.182))
+    payload = _hotel_payload(hotel, center, "El Born")
+    assert payload["coordinates"] == {"lat": 41.386, "lon": 2.182}
+    assert isinstance(payload["distance_to_desired_km"], float)
+    assert payload["distance_to_desired_km"] < 1.0  # ~150 m apart
+    assert payload["in_desired_area"] is True
+
+
+def test_hotel_payload_nulls_location_signals_when_absent(
+    make_hotel: Callable[..., Hotel],
+) -> None:
+    payload = _hotel_payload(make_hotel(id="h1", area="Eixample"), None, None)
+    assert payload["coordinates"] is None
+    assert payload["distance_to_desired_km"] is None
+    assert payload["in_desired_area"] is None
+
+
+async def test_score_sends_distance_to_backend(make_hotel: Callable[..., Hotel]) -> None:
+    backend = _FakeBackend([_valid_payload()])
+    scorer = LLMScorer(_settings(), backend=backend)
+    hotels = [
+        make_hotel(id="h1", area="El Born", location=GeoPoint(lat=41.386, lon=2.182)),
+        make_hotel(id="h2", area="Gràcia", location=GeoPoint(lat=41.403, lon=2.156)),
+    ]
+    context = SearchContext(center=GeoPoint(lat=41.385, lon=2.181), desired_area="El Born")
+
+    captured: list[dict[str, str]] = []
+    original = backend.complete
+
+    async def _spy(messages: list[dict[str, str]]) -> str:
+        captured.extend(messages)
+        return await original(messages)
+
+    backend.complete = _spy  # type: ignore[method-assign]
+    await scorer.score(hotels, context)
+
+    user_msg = next(m["content"] for m in captured if m["role"] == "user")
+    assert "distance_to_desired_km" in user_msg and "in_desired_area" in user_msg
 
 
 class _RecordingCompletions:

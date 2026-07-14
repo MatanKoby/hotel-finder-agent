@@ -64,12 +64,19 @@ class Settings(BaseSettings):
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     geocoder_user_agent: str = "hotel-finder/0.1 (+https://github.com/MatanKoby/hotel-finder)"
     geocoder_timeout: float = 10.0
+    # Geocode a structured `desired_area` into a ranking point (proximity bias +
+    # distance_to_desired) even when the search itself is city-level. A soft bias, not a hard
+    # filter. Offline tests set this false to stay network-free (the mock scenarios still exercise
+    # the area-string fallback).
+    geocode_desired_area: bool = True
 
     # --- pipeline thresholds ---
     min_candidates: int = 8  # below this after filtering, try the bounded-agency widening
     shortlist_size: int = 15  # how many candidates reach the scorer
-    max_widen_steps: int = 2  # cap on widening retries
+    max_widen_steps: int = 3  # cap on widening retries (step 0 radius; middle steps widen the
+    # price band by widen_price_factor; the final step drops price bounds to guarantee recovery)
     widen_radius_km: float = 3.0  # how much to grow the area radius per widen step
+    widen_price_factor: float = 0.5  # fractional price-band widening per middle widen step
 
     # --- price-band cutoffs (per-night, in the dominant currency; v1 mock uses EUR) ---
     band_budget_max: float = 90.0

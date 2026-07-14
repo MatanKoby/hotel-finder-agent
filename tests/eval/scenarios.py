@@ -42,8 +42,18 @@ def _stay(**overrides: object) -> Stay:
 
 
 def eval_settings() -> Settings:
-    """Hermetic offline settings: mock provider + heuristic scorer, no ``.env``."""
-    return Settings(_env_file=None, enabled_providers=["mock"], scorer="heuristic")
+    """Hermetic offline settings: mock provider + heuristic scorer, no ``.env``, no network.
+
+    ``geocode_desired_area`` is off so the ``desired_area`` scenarios don't reach Nominatim under
+    ``make check``; offline they exercise the heuristic's area-string fallback instead. The live
+    ``make eval`` (real ``Settings()``) leaves it on, so the geocoded area bias is measured.
+    """
+    return Settings(
+        _env_file=None,
+        enabled_providers=["mock"],
+        scorer="heuristic",
+        geocode_desired_area=False,
+    )
 
 
 @dataclass(frozen=True)

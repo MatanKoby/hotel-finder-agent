@@ -47,9 +47,9 @@ async def search(
     settings = settings or Settings()
     warnings: list[str] = []
 
-    resolved, request = await _resolve(request, settings, warnings)
+    resolved, request, filter_center = await _resolve(request, settings, warnings)
     context = SearchContext(
-        center=resolved.center,
+        center=resolved.center,  # the desired point: explicit centre, or a geocoded desired_area
         desired_area=request.place.desired_area,
         location_label=resolved.city or request.place.text,
         filters=request.filters,
@@ -61,7 +61,7 @@ async def search(
     candidates_found = len(candidates)
     candidates = [_with_price_band(h, settings) for h in candidates]
 
-    filtered, widened = _filter_with_widening(candidates, request, resolved.center, settings)
+    filtered, widened = _filter_with_widening(candidates, request, filter_center, settings)
     short = shortlist(filtered, context, settings.shortlist_size)
 
     scorer = make_scorer(settings)
@@ -102,16 +102,26 @@ def search_sync(
 
 async def _resolve(
     request: HotelSearchRequest, settings: Settings, warnings: list[str]
-) -> tuple[ResolvedQuery, HotelSearchRequest]:
+) -> tuple[ResolvedQuery, HotelSearchRequest, GeoPoint | None]:
     """Resolve ``Place`` into what the pipeline actually searches.
 
     Structured fields pass through. When only ``text`` is given, geocode it (non-fatally) into a
-    ``center`` + ``city`` + ``country_code``. Returns the ``ResolvedQuery`` (for the response) and
-    an **effective request** whose ``place`` carries the resolved fields, so providers discover
-    against them.
+    ``center`` + ``city`` + ``country_code``. Returns three things: the ``ResolvedQuery`` (for the
+    response, whose ``center`` is the **desired point** the results are ranked around), an
+    **effective request** whose ``place`` carries the resolved fields so providers discover against
+    them, and the **filter centre** (used only for the hard radius filter).
+
+    Two distinct "centres" fall out of a search:
+
+    * the **filter centre** — an explicit ``place.center`` or a geocoded free-text ``place`` —
+      bounds the hard radius filter and drives provider discovery;
+    * the **desired point** — the filter centre when there is one, otherwise a geocoded
+      ``desired_area`` — is what proximity ranking and ``distance_to_desired_km`` measure against. A
+      geocoded neighbourhood is a soft ranking bias, never a hard radius, so it is kept off the
+      filter centre.
     """
     place = request.place
-    center = place.center
+    center = place.center  # the filter centre (explicit, or geocoded free text below)
     city = place.city
     country_code = place.country_code
 
@@ -136,16 +146,37 @@ async def _resolve(
     )
     effective_request = request.model_copy(update={"place": effective_place})
 
+    # The desired point: the filter centre if we have one, else a geocoded neighbourhood (soft bias,
+    # so a miss is silent — it just falls back to the area-string signal, never a warning/degrade).
+    desired_point = center
+    if desired_point is None and place.desired_area and settings.geocode_desired_area:
+        desired_point = await _geocode_desired_area(
+            place.desired_area, city, country_code, settings
+        )
+
     stay = request.stay
     resolved = ResolvedQuery(
-        center=center,
+        center=desired_point,
         city=city,
         area=place.desired_area,
         check_in=stay.check_in if stay else None,
         check_out=stay.check_out if stay else None,
         currency=stay.currency if stay else None,
     )
-    return resolved, effective_request
+    return resolved, effective_request, center
+
+
+async def _geocode_desired_area(
+    desired_area: str, city: str | None, country_code: str | None, settings: Settings
+) -> GeoPoint | None:
+    """Geocode a neighbourhood into a ranking point, disambiguated by city/country. Never fatal."""
+    query = ", ".join(part for part in (desired_area, city, country_code) if part)
+    try:
+        result = await make_geocoder(settings).geocode(query)
+    except Exception as exc:  # noqa: BLE001 — a soft bias must never crash a search
+        logger.warning("geocoding desired_area %r failed: %s", query, exc)
+        return None
+    return GeoPoint(lat=result.lat, lon=result.lon) if result is not None else None
 
 
 async def _gather(
@@ -202,9 +233,11 @@ def _filter_with_widening(
 ) -> tuple[list[Hotel], bool]:
     """Hard-filter; if too few survive, relax **soft** constraints with a capped retry.
 
-    Must-have amenities and quality bounds (min_star / min_guest_rating) are never relaxed.
-    Widening grows the area radius (step 0) and then drops the price bounds (step 1+). This is a
-    fixed loop with a cap, not the LLM choosing its next move.
+    Must-have amenities and quality bounds (min_star / min_guest_rating) are never relaxed. Widening
+    grows the area radius every step; on price it is **gentle** — the middle steps widen the price
+    band by ``widen_price_factor`` (so a slightly-too-low budget recovers with hotels near it, not
+    the whole city), and only the **final** step drops the bounds entirely to guarantee the
+    budget-too-low fallback still returns something. A fixed loop with a cap, not the LLM deciding.
     """
     base = _base_criteria(request, center, settings)
     filtered = hard_filter(candidates, base)
@@ -212,13 +245,15 @@ def _filter_with_widening(
         return filtered, False
 
     radius = base.radius_km
+    last = settings.max_widen_steps - 1
     for step in range(settings.max_widen_steps):
         if radius is not None:
             radius += settings.widen_radius_km
+        price_min, price_max = _widened_price(base, step, last, settings.widen_price_factor)
         relaxed = FilterCriteria(
             must_have_amenities=base.must_have_amenities,
-            price_min=base.price_min if step == 0 else None,
-            price_max=base.price_max if step == 0 else None,
+            price_min=price_min,
+            price_max=price_max,
             min_star=base.min_star,
             min_guest_rating=base.min_guest_rating,
             center=base.center,
@@ -228,6 +263,20 @@ def _filter_with_widening(
         if len(filtered) >= settings.min_candidates:
             break
     return filtered, True
+
+
+def _widened_price(
+    base: FilterCriteria, step: int, last: int, factor: float
+) -> tuple[float | None, float | None]:
+    """Price bounds for a widening step: keep (step 0), widen the band (middle), drop (final)."""
+    if step >= last:
+        return None, None  # final step: no price discipline, so the fallback always recovers
+    if step == 0:
+        return base.price_min, base.price_max  # first widen the area only, price untouched
+    scale = 1.0 + factor * step
+    price_max = base.price_max * scale if base.price_max is not None else None
+    price_min = base.price_min / scale if base.price_min is not None else None
+    return price_min, price_max
 
 
 def _offers_for(hotel: Hotel, request: HotelSearchRequest) -> list[RateOffer]:
@@ -284,14 +333,19 @@ def _build_lenses(
     out: dict[LensName, list[Pick]] = {}
     if LensName.STRATIFIED_BEST in wanted:
         out[LensName.STRATIFIED_BEST] = to_picks(
-            lenses.stratified_best(scored, per_band=1), offers_by_id, center
+            lenses.stratified_best(scored, per_band=1),
+            offers_by_id,
+            center,
+            LensName.STRATIFIED_BEST,
         )
     if LensName.OVERALL_STANDOUTS in wanted:
         out[LensName.OVERALL_STANDOUTS] = to_picks(
-            lenses.overall_standouts(scored, k), offers_by_id, center
+            lenses.overall_standouts(scored, k), offers_by_id, center, LensName.OVERALL_STANDOUTS
         )
     if LensName.HIDDEN_GEMS in wanted:
-        out[LensName.HIDDEN_GEMS] = to_picks(lenses.hidden_gems(scored, k), offers_by_id, center)
+        out[LensName.HIDDEN_GEMS] = to_picks(
+            lenses.hidden_gems(scored, k), offers_by_id, center, LensName.HIDDEN_GEMS
+        )
     return out
 
 

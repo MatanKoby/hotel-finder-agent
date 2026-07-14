@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from hotel_finder.models import GeoPoint, Hotel
+from hotel_finder.contracts import LensName
+from hotel_finder.models import GeoPoint, Hotel, PriceBand
 from hotel_finder.scoring.base import ScoredHotel
 from hotel_finder.stages.explain import to_pick
 from hotel_finder.utils.geo import haversine
@@ -46,3 +47,26 @@ def test_image_url_passes_through_from_hotel() -> None:
     assert pick.image_url == "https://img/1.jpg"
 
     assert to_pick(_scored(_HOTEL_POINT), [], _SAGRADA).image_url is None  # None when absent
+
+
+def _rated(rationale: str, band: PriceBand | None = None) -> ScoredHotel:
+    hotel = Hotel(id="h1", source="mock", name="Test Hotel", price_band=band)
+    return ScoredHotel(hotel=hotel, score=0.7, subscores={"value": 0.7}, rationale=rationale)
+
+
+def test_stratified_lens_appends_price_tier() -> None:
+    pick = to_pick(_rated("great value", PriceBand.BUDGET), [], None, LensName.STRATIFIED_BEST)
+    assert pick.rationale == "great value (best of the budget tier)"
+
+
+def test_hidden_gems_lens_adds_gem_framing_only_when_missing() -> None:
+    added = to_pick(_rated("quiet and central"), [], None, LensName.HIDDEN_GEMS)
+    assert added.rationale == "Hidden gem: quiet and central"
+    # Already gem-framed: don't double it up.
+    kept = to_pick(_rated("a likely hidden gem"), [], None, LensName.HIDDEN_GEMS)
+    assert kept.rationale == "a likely hidden gem"
+
+
+def test_overall_lens_leaves_rationale_untouched() -> None:
+    pick = to_pick(_rated("strong all round"), [], None, LensName.OVERALL_STANDOUTS)
+    assert pick.rationale == "strong all round"

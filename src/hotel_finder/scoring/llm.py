@@ -24,10 +24,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hotel_finder.config import Settings
 from hotel_finder.context import SearchContext
-from hotel_finder.models import Hotel
+from hotel_finder.models import GeoPoint, Hotel
 from hotel_finder.scoring.base import HotelScorer, ScoredHotel, ScoreReport, overall_score
 from hotel_finder.scoring.heuristic import HeuristicScorer
 from hotel_finder.scoring.nebius_endpoint import NebiusEndpointClient
+from hotel_finder.utils.geo import haversine
+from hotel_finder.utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +39,17 @@ _COLD_START_DELAY = 1.5
 _SYSTEM_PROMPT = (
     "You are a hotel analyst. Score each hotel on four axes, each a float in [0, 1]:\n"
     "- value: quality (rating/stars) relative to its price.\n"
-    "- location: fit to the requested location/desired area.\n"
+    "- location: fit to the requested location/desired area. Ground this in the provided "
+    "distance_to_desired_km (smaller is better) and in_desired_area flag; only fall back to the "
+    "area name when both are null. Do not guess a location score from the name alone.\n"
     "- character: distinctiveness and amenities (a memorable place scores higher).\n"
     "- gem_signal: a hidden gem — excellent for its price and under-the-radar "
-    "(great rating with relatively few reviews).\n"
+    "(great rating with relatively few reviews). Do not call a hotel a gem if review_count is "
+    "high or unknown.\n"
     'Return ONLY a JSON object: {"scores": [{"id": str, "value": num, "location": num, '
     '"character": num, "gem_signal": num, "rationale": str}]}. '
-    "rationale is one short sentence. Include every hotel id exactly once."
+    "rationale is one short sentence consistent with the scores. "
+    "Include every hotel id exactly once."
 )
 
 Message = dict[str, str]
@@ -141,11 +147,36 @@ def _select_backend(settings: Settings) -> _ChatBackend | None:
     return None
 
 
-def _hotel_payload(hotel: Hotel) -> dict[str, object]:
+def _hotel_payload(
+    hotel: Hotel, center: GeoPoint | None, desired_area: str | None
+) -> dict[str, object]:
+    """Compact per-hotel payload for the scorer, including grounded location signals.
+
+    ``distance_to_desired_km`` (haversine to the resolved desired point) and ``in_desired_area``
+    give the model a real location signal instead of guessing from the name; both are ``None`` when
+    the input isn't available (no centre / no coordinates / no desired area).
+    """
+    distance = (
+        round(haversine(hotel.location, center), 2)
+        if center is not None and hotel.location is not None
+        else None
+    )
+    in_desired_area = (
+        normalize_text(desired_area) in normalize_text(hotel.area)
+        if desired_area and hotel.area
+        else None
+    )
     return {
         "id": hotel.id,
         "name": hotel.name,
         "area": hotel.area,
+        "coordinates": (
+            {"lat": hotel.location.lat, "lon": hotel.location.lon}
+            if hotel.location is not None
+            else None
+        ),
+        "distance_to_desired_km": distance,
+        "in_desired_area": in_desired_area,
         "price_per_night": hotel.price_per_night,
         "currency": hotel.currency,
         "price_band": hotel.price_band.value if hotel.price_band else None,
@@ -219,7 +250,9 @@ class LLMScorer:
                 "price_min": context.filters.price_min,
                 "price_max": context.filters.price_max,
             },
-            "hotels": [_hotel_payload(h) for h in hotels],
+            "hotels": [
+                _hotel_payload(h, context.center, context.desired_area) for h in hotels
+            ],
         }
         messages: list[Message] = [
             {"role": "system", "content": _SYSTEM_PROMPT},

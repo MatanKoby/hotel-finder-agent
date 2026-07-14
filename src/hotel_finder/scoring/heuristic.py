@@ -15,6 +15,7 @@ from hotel_finder.utils.text import normalize_text
 
 _FAR_KM = 5.0  # distance at which the location score bottoms out
 _REVIEW_SATURATION = 300.0  # review count at which "few reviews" scarcity reaches zero
+_FEW_REVIEWS = 150  # at/below this a "relatively few reviews" claim in the rationale is truthful
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -35,9 +36,32 @@ def _location(hotel: Hotel, context: SearchContext) -> float:
     if context.center is not None and hotel.location is not None:
         return _clamp(1.0 - haversine(hotel.location, context.center) / _FAR_KM)
     if context.desired_area and hotel.area:
-        in_area = normalize_text(context.desired_area) in normalize_text(hotel.area)
-        return 1.0 if in_area else 0.5
+        return _area_affinity(context.desired_area, hotel.area)
     return 0.6  # neutral when there's no location signal to go on
+
+
+def _significant_tokens(text: str) -> set[str]:
+    """Words worth matching on: drop short articles ("el", "la", "de") that many areas share."""
+    return {token for token in text.split() if len(token) > 2}
+
+
+def _area_affinity(desired_area: str, area: str) -> float:
+    """Graded name-only neighbourhood fit, used when there's no ``center`` for real distance.
+
+    A flat match/non-match is too coarse (the finding: "El Born"/"Gràcia" barely move the ranking).
+    Instead: an exact/substring match scores top, a partial word overlap earns partial credit, and a
+    known-different neighbourhood floors clearly below both (and below the no-signal neutral) so the
+    wanted area actually rises to the top.
+    """
+    desired = normalize_text(desired_area)
+    hotel_area = normalize_text(area)
+    if desired and (desired in hotel_area or hotel_area in desired):
+        return 1.0
+    desired_tokens = _significant_tokens(desired)
+    shared = desired_tokens & _significant_tokens(hotel_area)
+    if desired_tokens and shared:
+        return _clamp(0.55 + 0.35 * len(shared) / len(desired_tokens))
+    return 0.35
 
 
 def _character(hotel: Hotel) -> float:
@@ -68,7 +92,14 @@ def _rationale(hotel: Hotel, subscores: dict[str, float]) -> str:
     if hotel.area:
         bits.append(f"in {hotel.area}")
     if subscores["gem_signal"] >= 0.5:
-        bits.append("over-performs its price with relatively few reviews — a likely hidden gem")
+        # Only claim "few reviews" when that's actually true; otherwise the rationale contradicts
+        # a hotel with many (or unknown) reviews (see roadmap P1/P6 finding 5).
+        if hotel.review_count is not None and hotel.review_count <= _FEW_REVIEWS:
+            bits.append(
+                f"a likely hidden gem: strong rating on only {hotel.review_count} reviews"
+            )
+        else:
+            bits.append("a likely hidden gem: over-performs its price for the quality")
     elif subscores["value"] >= 0.7:
         bits.append("strong value for the quality")
     if not bits:

@@ -97,7 +97,7 @@ async def test_geocode_no_result_warns(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_structured_place_skips_geocoding(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A structured place must not invoke the geocoder at all.
+    # A structured place with no desired_area must not invoke the geocoder at all.
     def _boom(_settings: Settings) -> object:
         raise AssertionError("geocoder should not be built for a structured place")
 
@@ -105,3 +105,30 @@ async def test_structured_place_skips_geocoding(monkeypatch: pytest.MonkeyPatch)
     request = HotelSearchRequest(place=Place(city="Barcelona"))
     response = await search(request, _settings())
     assert response.resolved.city == "Barcelona"
+
+
+async def test_desired_area_geocoded_to_ranking_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A structured city + desired_area geocodes the neighbourhood into resolved.center, so located
+    # picks carry distance_to_desired_km — without a warning (a soft bias, not a degrade).
+    fake = _FakeGeocoder(GeoResult(lat=41.385, lon=2.181, city="Barcelona", country_code="ES"))
+    monkeypatch.setattr(pipeline, "make_geocoder", lambda _settings: fake)
+
+    request = HotelSearchRequest(place=Place(city="Barcelona", desired_area="El Born"))
+    response = await search(request, _settings(geocode_desired_area=True))
+
+    assert response.resolved.center is not None
+    assert response.resolved.area == "El Born"
+    located = [p for plist in response.lenses.values() for p in plist if p.coordinates is not None]
+    assert located and all(p.distance_to_desired_km is not None for p in located)
+    assert not response.warnings and response.agent_status == "ok"
+
+
+async def test_desired_area_geocoding_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With geocode_desired_area off, a structured place never builds a geocoder (offline-safe).
+    def _boom(_settings: Settings) -> object:
+        raise AssertionError("geocoder should not be built when geocode_desired_area is off")
+
+    monkeypatch.setattr(pipeline, "make_geocoder", _boom)
+    request = HotelSearchRequest(place=Place(city="Barcelona", desired_area="El Born"))
+    response = await search(request, _settings(geocode_desired_area=False))
+    assert response.resolved.center is None  # no ranking point, falls back to the area string
