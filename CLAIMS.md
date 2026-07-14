@@ -19,11 +19,66 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch P3 — ANCHOR intent (peers of a named hotel)
 - Owner: claude
 - Started: 2026-07-14 06:21
+- Finished: 2026-07-14 06:55
+- Commit: e69c049
 
-## Completed
+**What shipped.** The reserved `anchor` intent is now implemented: `intent=anchor` +
+`anchor_hotel` finds **peers of a named hotel** instead of a broad area. New **`stages/anchor.py`**:
+`find_anchor(candidates, name)` locates the anchor among the discovered candidates by
+`normalize_text` name (exact match, else a **unique** containment match either direction; ambiguous
+or absent → `None`); `anchor_envelope(anchor, settings)` derives an `AnchorEnvelope` — **proximity**
+(anchor coords + `anchor_radius_km`), a **price window** (`anchor_price_low_factor` ..
+`anchor_price_high_factor` × the anchor's price), and **class floors** (`min_star =
+star - anchor_star_tolerance`, `min_guest_rating = rating - anchor_rating_tolerance`); each dimension
+is dropped when the anchor lacks that attribute, and `is_empty()` reports "no usable constraint".
+`AnchorEnvelope.to_criteria(base)` folds the envelope into the request's own `Filters` so it only
+ever **tightens** (stricter price/star/rating bound wins; must-have amenities pass through) and the
+anchor's location replaces the request centre for peer proximity.
+
+**Pipeline (`pipeline.py`).** `_filter_with_widening` was refactored to take the `FilterCriteria`
+**base** directly (was `(request, center)`), so `search()` builds the base once and the anchor
+branch can swap it. New `_apply_anchor` runs between price-band derivation and the hard filter (only
+when `intent is Intent.ANCHOR`): locate the anchor, **exclude it** from candidates (it is the
+reference, not a recommendation), tighten `base` to the envelope, and re-centre ranking on the anchor
+(`resolved.center = anchor.location`, so the shortlist proximity bias **and**
+`distance_to_desired_km` measure from the anchor). Anchor not found, or too thin to constrain peers →
+`warning` + `agent_status=degraded` + a broad **zone** fallback over the same candidates (never
+crashes, per `contract.md` → Error philosophy). **Contract (`contracts.py`):** a `model_validator`
+raises at construction when `intent=anchor` has no non-empty `anchor_hotel` (the sole anchor
+validation, caught at the edge). **Config:** 5 `anchor_*` knobs (`anchor_radius_km=3.0`,
+`anchor_price_low_factor=0.6`, `anchor_price_high_factor=1.6`, `anchor_star_tolerance=1`,
+`anchor_rating_tolerance=1.0`). Spec: `contract.md` (intent/anchor_hotel pair + validator),
+`pipeline.md` (Anchor intent section), `config.md` (knob table), `roadmap.md` (ANCHOR marked done) —
+commit `a125f75`.
+
+**Verification.** `make check` green (ruff + mypy strict; **pytest 119 passed, +14**). New
+`tests/test_anchor.py` (11): `find_anchor` exact/containment/ambiguous/no-match/empty;
+`anchor_envelope` full/partial/empty; `to_criteria` tightens-never-loosens; and end-to-end over the
+mock — anchor "Diagonal Upscale Suites" returns exactly its 2 in-envelope peers (Barceloneta Beach
+Inn, El Born Riverside), excludes itself, sets `resolved.center` to the anchor, and every pick sits
+inside the price window / radius / class floors; a partial name still resolves; a request `price_max`
+below the window still caps peers; an unknown anchor degrades to a broad zone search with a "not
+found" warning. Plus 3 contract tests (validator raises; builds with a name; zone default inert).
+**Drove the flow manually** (offline mock, heuristic): the anchor path returns the 2 peers ranked
+around the anchor with distances 2.06/2.88 km; the not-found path degrades with the expected warning
+and the whole city is searched.
+
+**Deferred / notes.** Peer discovery is scoped to the request's `place` (the anchor's city/area),
+matching the anchor **within** the discovered set — there is no global by-name hotel lookup (LiteAPI
+discovery has no name-search; a request always carries a `place`, so this is sufficient). Rationales
+are **not** anchor-aware yet (picks are peers by construction, and the orchestrator knows it asked
+for anchor peers; adding "a peer of X" phrasing would thread the anchor name into `stages/explain.py`
+— a cosmetic follow-up). The `anchor_*` factors are untuned starting values (same stance as the other
+thresholds, `roadmap.md`). Not verified against a live source, but the intent branch is
+provider-agnostic (operates on the deduped candidate set). Remaining open work: **P4** (more
+sources), **P5** (web-search backup) — each open-scope, `spec-edit` first; plus the two M1 flags
+(`filters.property_types` unenforced, `over_budget` per-night vs total) and eval finding 6 (semantic
+metrics). `dev` pushed to `origin/dev`.
 
 ### Batch P2 — Result-quality improvements
 - Owner: claude

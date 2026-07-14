@@ -10,6 +10,20 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch P3 — ANCHOR intent (peers of a named hotel)
+Implemented the reserved `anchor` intent: `intent=anchor` + `anchor_hotel` finds **peers of a named
+hotel**. New `stages/anchor.py` — `find_anchor` locates the anchor among the discovered candidates by
+normalized name (exact, else unique containment), and `anchor_envelope` derives a peer envelope
+(proximity via anchor coords + `anchor_radius_km`, a price window `anchor_price_low/high_factor`, and
+star/rating class floors); `to_criteria` folds it into the request's `Filters` so it only tightens.
+The pipeline (`_apply_anchor`, run between price-band derivation and the hard filter) excludes the
+anchor, applies the envelope through the normal widening + scoring, and re-centres ranking on the
+anchor (`resolved.center` = anchor location, so proximity + `distance_to_desired_km` measure from it).
+Anchor not found / too thin → warning + degraded + broad zone fallback (never crashes). A contract
+validator requires a non-empty `anchor_hotel` when `intent=anchor`; 5 `anchor_*` config knobs added.
+Key commits `e69c049` (code) + `a125f75` (spec). `make check` green, 119 tests (+14). Follow-ups
+deferred: anchor-aware rationale phrasing in `explain.py`; the `anchor_*` factors left untuned.
+
 ## Batch P2 — Result-quality improvements
 Addressed the P1/P6 live-eval findings (`spec/roadmap.md` items 1-5). `stratified_best`
 (`stages/lenses.py`) falls back to **star tiers** when no candidate has a price band, so a

@@ -37,28 +37,21 @@ batches below are **post-M1** (evaluation and quality).
 
 > **Pick-order pointer for "continue".** M1 is done, the **contract reshape (C1 + C2)** shipped, the
 > **evaluation harness (P1)** shipped, its **live-run wiring + LLM thinking-off toggle (P6)** shipped,
-> and the **result-quality pass (P2)** shipped (findings 1-5: star-tier lens fallback, desired-area
-> ranking point, grounded heuristic/LLM location, honest gem rationales, gentle price widening — see
-> `CLAIMS.md` → Completed).
-> The remaining batches — **P3** (anchor intent), **P4** (more sources), **P5** (web-search backup) —
-> are all **open-scope** and need a `spec-edit` first. Two M1 correctness flags are also still open
-> (each needs a `spec-edit` first): `filters.property_types` is accepted but unenforced, and
-> `over_budget` is computed per-night while `spec/contract.md` phrases the budget as a total. Eval
-> finding 6 (semantic/quality metrics, not just structure) is also open. Claim via
-> `specflow/procedures/claim-batch.md`, record in `CLAIMS.md`, `make check` as the gate.
+> the **result-quality pass (P2)** shipped (findings 1-5), and the **`anchor` intent (P3)** shipped
+> (peer envelope + exclusion + zone fallback — see `CLAIMS.md` → Completed and `spec/pipeline.md` →
+> Anchor intent).
+> The remaining batches — **P4** (more sources), **P5** (web-search backup) — are both **open-scope**
+> and need a `spec-edit` first. Two M1 correctness flags are also still open (each needs a `spec-edit`
+> first): `filters.property_types` is accepted but unenforced, and `over_budget` is computed per-night
+> while `spec/contract.md` phrases the budget as a total. Eval finding 6 (semantic/quality metrics,
+> not just structure) is also open. Claim via `specflow/procedures/claim-batch.md`, record in
+> `CLAIMS.md`, `make check` as the gate.
 
 ---
 
 ## Post-M1 batches (testing, evaluation, quality)
 
 Out of scope for M1; unblock after it lands. M1 ships the capability; these make it work *well*.
-
-### Batch P3 — `ANCHOR` intent (peers of a named hotel)
-
-**Depends on:** M1b. **Open scope** → `spec-edit` first. **Goal.** Implement the reserved `anchor`
-intent: resolve `anchor_hotel` to a band/area/rating envelope, then find peers within it
-(`spec/contract.md` → `Intent`, `spec/roadmap.md`). Edits `pipeline.py` (intent branch), maybe
-`stages/anchor.py`, `tests/`. `zone` behavior unchanged.
 
 ### Batch P4 — Additional data sources / multi-source blend
 
