@@ -10,6 +10,20 @@ picking a new claim. The full implementation history is in `git log` + `specflow
 Shipped <what> in <where>. Key commit `<sha>`. <One line on any follow-up deferred.>
 -->
 
+## Batch P7 — Refinement entry point (feedback loop)
+Added a second stable entry point `refine()` / `refine_sync()` parallel to `search` (same
+`HotelSearchResponse` out), for the orchestrator's two-call loop: `search`, then `refine` with the
+user's wanted / unwanted marks on the prior response. New stable `Pick.id` (`"{source}:{id}"`) is the
+search→refine identity the orchestrator echoes back. New `stages/refine.py`: `match_feedback` (id then
+name), `plan_refine` (exclude `wanted ∪ unwanted ∪ exclude` so only **new** options return, a wanted
+`RefineEnvelope` that tightens price/star/rating + re-centres on the wanted centroid, and
+`apply_preference`, a bounded post-scoring nudge over area/band/star/amenities surfaced as
+`why["preference"]`). The agent stays stateless: `refine()` re-discovers candidates each call and
+hoards nothing. `pipeline.py` extracted a shared `_assemble`/`_discover` tail so both entries build
+one way; `SearchContext.preference` feeds the LLM prompt; 6 `refine_*` config knobs. Key commit
+`8775700` (spec `e7d269b`, `d896524`). `make check` green (136 tests, +17). Live LLM path unverified
+(Nebius creds unset); validate via `make eval` when configured.
+
 ## Batch P3 — ANCHOR intent (peers of a named hotel)
 Implemented the reserved `anchor` intent: `intent=anchor` + `anchor_hotel` finds **peers of a named
 hotel**. New `stages/anchor.py` — `find_anchor` locates the anchor among the discovered candidates by

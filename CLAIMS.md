@@ -19,11 +19,56 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+## Completed
+
 ### Batch P7 — Refinement entry point (feedback loop)
 - Owner: claude
 - Started: 2026-07-16 15:43
+- Finished: 2026-07-16 18:54
+- Commit: 8775700
 
-## Completed
+**What shipped.** A second stable entry point `refine()` / `refine_sync()` parallel to `search`,
+returning the same `HotelSearchResponse`, so the orchestrator runs a two-call loop: `search`, then
+`refine` with the user's wanted / unwanted marks on the prior response. The agent stays **stateless**
+(a cloud-function-friendly library that hoards no candidate set between calls): `refine()`
+re-discovers from `request.base` each call and applies the feedback.
+
+**Contract (`contracts.py`).** New `Pick.id` = `"{source}:{id}"` (globally unique, opaque, **stable
+across the search→refine round-trip** because both providers derive `Hotel.id` from a stable
+provider/fixture id; set in `stages/explain.py`). New `HotelRefineRequest` (`base` /`wanted` /
+`unwanted` / `exclude` / `round`, `extra="forbid"`), `HotelFeedback` + `HotelFeedbackAttributes` (a
+reduced, forgiving `extra="ignore"` echo of a prior pick: `id`, `name`, `attributes`, `reason`), and
+`Diagnostics.refined` + `round`. Exports `refine`, `refine_sync`, `HotelRefineRequest`,
+`HotelFeedback`, `HotelFeedbackAttributes`.
+
+**Stage (`stages/refine.py`).** `match_feedback` (by `Pick.id` first, then the `find_anchor`
+normalized-name matcher); `plan_refine` builds the **exclusion set** (`wanted ∪ unwanted ∪ exclude`,
+so refine returns **new** options, never the rejected/liked ones again), the **wanted envelope**
+(`RefineEnvelope`, a multi-hotel analogue of the anchor envelope: price window across the wanted
+prices, star/rating floors near the group minimum, re-centre on the wanted centroid; `to_criteria`
+only ever tightens); and `apply_preference` (a bounded post-scoring nudge `refine_bias_weight *
+(sim_wanted − sim_unwanted)` over area / price band / star tier / amenities, surfaced as
+`why["preference"]`, applied to whatever scorer ran so the bias is deterministic offline).
+
+**Pipeline (`pipeline.py`).** `refine()` async + `refine_sync()`; the shared tail of `search()` was
+extracted into `_assemble` (and discovery into `_discover`) so both entry points build the response
+through one path. `SearchContext` gained `preference`, threaded into the LLM prompt (`scoring/llm.py`:
+wanted/unwanted profiles + `reason` text, so live rationales stay coherent; the deterministic nudge
+covers the heuristic path). `config.py`: 6 `refine_*` knobs (`refine_radius_km=3.0`,
+`refine_price_low_factor=0.7`, `refine_price_high_factor=1.4`, `refine_star_tolerance=1`,
+`refine_rating_tolerance=1.0`, `refine_bias_weight=0.15`).
+
+**Spec:** `contract.md` (Refinement section + `Pick.id`), `pipeline.md` (Refine section),
+`config.md` (Refine knobs), `scoring.md` (Preference bias), `dev-guide.md`, `roadmap.md` — commits
+`e7d269b`, `d896524`.
+
+**Verification.** `make check` green (ruff + mypy strict; **pytest 136 passed, +17** in
+`tests/test_refine.py`: units for matching / envelope / preference / exclusion, and e2e over the mock
+provider for unwanted-excluded, wanted-favored-and-not-repeated, id round-trip, exclude list, and
+empty-feedback-equals-search). Ran the orchestrator's keyless "Done" command end to end from a
+`.env`-free dir: `refine_sync(...)` → `agent_status=ok`, `refined=True`, `scorer=heuristic`, unwanted
+excluded, wanted not repeated, stable `mock:bcn-*` ids, positive preference nudges on wanted-like
+picks. **Live LLM path unverified** (Nebius creds unset); validate with `make eval` when configured.
 
 ### Batch P3 — ANCHOR intent (peers of a named hotel)
 - Owner: claude

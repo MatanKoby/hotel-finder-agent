@@ -39,10 +39,9 @@ batches below are **post-M1** (evaluation and quality).
 > **evaluation harness (P1)** shipped, its **live-run wiring + LLM thinking-off toggle (P6)** shipped,
 > the **result-quality pass (P2)** shipped (findings 1-5), and the **`anchor` intent (P3)** shipped
 > (peer envelope + exclusion + zone fallback — see `CLAIMS.md` → Completed and `spec/pipeline.md` →
-> Anchor intent).
-> **Next up: Batch P7** (refinement / feedback-loop entry point) is **specced and ready to claim** —
-> `refine(HotelRefineRequest)` with a stable `Pick.id`, see `spec/contract.md` → Refinement and
-> `spec/pipeline.md` → Refine.
+> Anchor intent), and the **refinement / feedback-loop entry point (P7)** shipped (`refine()` +
+> stable `Pick.id` + wanted/unwanted exclusion, wanted envelope, and preference bias — see
+> `CLAIMS.md` → Completed and `spec/contract.md` → Refinement).
 > The remaining batches — **P4** (more sources), **P5** (web-search backup) — are both **open-scope**
 > and need a `spec-edit` first. Two M1 correctness flags are also still open (each needs a `spec-edit`
 > first): `filters.property_types` is accepted but unenforced, and `over_budget` is computed per-night
@@ -69,36 +68,4 @@ folder per `spec/providers.md`; cross-source dedupe stays in the pipeline.
 `spec/roadmap.md` (M1 → web search is secondary): a separate search tool/API feeding the pipeline
 when real providers return thin results. Chat completions do not browse, so this needs a search API
 (see `spec/data-sources.md`).
-
-### Batch P7 — Refinement entry point (feedback loop)
-
-**Depends on:** M1 (shipped). **Specced** (this batch's design is in `spec/`, ready to build).
-**Goal.** A second stable entry point `refine(HotelRefineRequest)` (+ `refine_sync`), returning the
-same `HotelSearchResponse` as `search`, so the orchestrator runs a two-call loop: `search`, then
-`refine` with the user's wanted / unwanted marks. Full contract + behavior:
-`spec/contract.md` → Refinement, `spec/pipeline.md` → Refine, `spec/config.md` → Refine knobs,
-`spec/scoring.md` → Preference bias.
-
-**Scope.**
-- **Contract** (`contracts.py`): add `Pick.id` (`"{source}:{id}"`), `HotelFeedback` +
-  `HotelFeedbackAttributes`, `HotelRefineRequest` (`base` / `wanted` / `unwanted` / `exclude` /
-  `round`), `Diagnostics.refined` + `round`; export `refine`, `refine_sync`, `HotelRefineRequest`,
-  `HotelFeedback`. Set `Pick.id` in `stages/explain.py`.
-- **Stage** `stages/refine.py`: `resolve_feedback` (id then normalized-name match), `exclusion_ids`
-  (wanted ∪ unwanted ∪ exclude), `RefineEnvelope` from the wanted set (multi-hotel analogue of the
-  anchor envelope, tighten-only + re-centre on the centroid), `apply_preference` (bounded post-scoring
-  nudge, surfaced as `why["preference"]`).
-- **Pipeline** (`pipeline.py`): `refine()` async + `refine_sync()`; extract the shared tail of
-  `search()` so both entry points assemble the response through one path; thread wanted/unwanted
-  preference onto the scorers via `SearchContext`. Add `refine_*` knobs to `config.py`.
-- **Scoring**: wanted/unwanted profiles + `reason` text into the LLM prompt (`scoring/llm.py`); the
-  deterministic nudge in `apply_preference` covers the heuristic path.
-- **Tests** `tests/test_refine.py` (offline mock + heuristic, under `make check`): response shape,
-  **unwanted absent**, **wanted-like favored**, statelessness / id round-trip. Live path validated
-  via `make eval` (the repo has no live pytest tests to mark).
-
-**Done.** From a clean env with no secrets: `refine_sync(HotelRefineRequest(base=<minimal
-HotelSearchRequest>, wanted=[...], unwanted=[...]))` imports and returns a structured
-`HotelSearchResponse` with the unwanted properties excluded and wanted-like properties favored.
-`make check` green.
 
