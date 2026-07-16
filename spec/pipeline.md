@@ -109,12 +109,13 @@ filter:
    remembered.
 3. **Derive a wanted envelope** (`refine_envelope`) from the resolved `wanted` hotels: a price
    window spanning their prices (widened by `refine_price_low_factor` / `refine_price_high_factor`),
-   a star / guest-rating floor near the group's minimum (`refine_star_tolerance` /
-   `refine_rating_tolerance`), the amenities they **all** share as must-haves, and a re-centre on the
-   wanted **centroid** (`refine_radius_km`). Like the anchor envelope it only ever **tightens** the
-   request's own `Filters` (stricter bound wins) and feeds the widening step, so a too-narrow
-   envelope still recovers candidates rather than returning nothing. Empty `wanted` yields an empty
-   envelope (no tightening, no re-centre).
+   star and guest-rating floors near the group's minimum (`refine_star_tolerance` /
+   `refine_rating_tolerance`), and a re-centre on the wanted **centroid** (`refine_radius_km`).
+   Exactly like the anchor envelope, it only ever **tightens** the request's own `Filters` (the
+   stricter bound wins) and feeds the widening step, so a too-narrow envelope still recovers
+   candidates rather than returning nothing. Shared **amenities**, area, price band, and property
+   type are handled as a *soft* bias in step 4, never hard filters, so they cannot zero out the
+   result. Empty `wanted` yields an empty envelope (no tightening, no re-centre).
 4. **Preference bias after scoring** (`apply_preference`): a bounded nudge to each hotel's overall
    score, `+` for similarity to the `wanted` attribute profile and `−` for similarity to the
    `unwanted` one (shared area, price band, star tier, amenities, property type), capped at
