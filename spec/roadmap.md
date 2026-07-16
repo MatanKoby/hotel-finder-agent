@@ -70,6 +70,12 @@ catalogued in `data-sources.md` → Future direction and to be broken into batch
 - ~~**`ANCHOR` intent**~~ — **done (P3):** resolve a named hotel to a peer envelope (proximity +
   price window + star/rating floors), exclude it, and return peers; broad-zone fallback when the
   anchor is unresolved. See `pipeline.md` → Anchor intent and `contract.md` → intent/anchor_hotel.
+- **Refinement entry point (feedback loop)** — **in flight (P7):** a second entry point
+  `refine(HotelRefineRequest)` that takes the user's wanted / unwanted marks on a prior response and
+  returns a **new** fitting set (exclude already-seen + a wanted envelope + a wanted/unwanted
+  preference bias), with a stable `Pick.id` for the search→refine round-trip. Mirrors the sibling
+  activities agent's two-call design. See `contract.md` → Refinement, `pipeline.md` → Refine, and
+  `BUILD_QUEUE.md` → Batch P7.
 - **Booking flow (LiteAPI prebook / book / retrieve / cancel).** LiteAPI supports it off the rate
   `offerId`, but M1 (and v1) is read-only recommendation. Noted for the future in
   `data-sources.md` → LiteAPI. Out of scope now.

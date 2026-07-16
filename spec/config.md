@@ -29,6 +29,11 @@ the provider set (`providers.md`).
 | `anchor_price_low_factor` / `anchor_price_high_factor` | `0.6 / 1.6` (ANCHOR: peer price window = anchor price × these) | resp. |
 | `anchor_star_tolerance` | `1` (ANCHOR: peers may be this many stars below the anchor) | `ANCHOR_STAR_TOLERANCE` |
 | `anchor_rating_tolerance` | `1.0` (ANCHOR: peers may be this far below the anchor's guest score) | `ANCHOR_RATING_TOLERANCE` |
+| `refine_radius_km` | `3.0` (REFINE: re-centre radius around the wanted centroid) | `REFINE_RADIUS_KM` |
+| `refine_price_low_factor` / `refine_price_high_factor` | `0.7 / 1.4` (REFINE: wanted price window = min/max wanted price × these) | resp. |
+| `refine_star_tolerance` | `1` (REFINE: new options may be this many stars below the wanted floor) | `REFINE_STAR_TOLERANCE` |
+| `refine_rating_tolerance` | `1.0` (REFINE: this far below the wanted guest-score floor) | `REFINE_RATING_TOLERANCE` |
+| `refine_bias_weight` | `0.15` (REFINE: cap on the wanted/unwanted preference nudge to the overall score) | `REFINE_BIAS_WEIGHT` |
 | `band_budget_max` / `band_midrange_max` / `band_upscale_max` | `90 / 180 / 350` (EUR/night) | resp. |
 
 ## LLM run modes (Nebius)
@@ -73,3 +78,11 @@ tuned; revisiting them is tracked in `roadmap.md`.
 The `anchor_*` settings shape the peer envelope for `intent = anchor`; their exact roles (proximity,
 price window, class floors, and how they intersect the request's own filters) live in
 `pipeline.md` → Anchor intent. Like the rest, they are starting values, not tuned.
+
+## Refine knobs
+
+The `refine_*` settings shape the feedback loop (`refine()`, see `contract.md` → Refinement): the
+`refine_radius_km` / `refine_price_*_factor` / `refine_*_tolerance` knobs build the wanted envelope
+(a multi-hotel analogue of the anchor envelope), and `refine_bias_weight` caps the post-scoring
+preference nudge toward wanted / away from unwanted attributes. Their exact roles live in
+`pipeline.md` → Refine. Starting values, not tuned.

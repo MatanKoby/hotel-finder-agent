@@ -34,6 +34,10 @@ LLM: the sequence is fixed and known up front, which is what keeps the agent eva
 constrains the search to peers of a named hotel — see Anchor intent below. Everything else is
 unchanged; `intent = zone` (the default) skips it.
 
+The **`refine()`** entry point (see `contract.md` → Refinement) runs this same sequence over the
+`base` trip, inserting a **feedback-resolution** step in the same slot (between 4 and 5) and a
+**preference bias** after scoring (7) — see Refine below.
+
 ## Dedupe (`stages/dedupe.py`)
 
 Two records are the same hotel when `normalize_text(name)` is equal **and** (if both have
@@ -87,6 +91,42 @@ coords/price/star/rating), the pipeline adds a `warning`, sets `agent_status = d
 broad **zone** search over the same candidates — a degenerate outcome is data the orchestrator reads,
 not an exception (`contract.md` → Error philosophy).
 
+## Refine (`stages/refine.py`)
+
+`refine(HotelRefineRequest)` (see `contract.md` → Refinement) is the feedback loop: the same
+sequence over `request.base`, with the wanted/unwanted/exclude feedback applied. Because the agent
+is **stateless**, it re-discovers the candidate set from `base` (steps 1–4), then, before the hard
+filter:
+
+1. **Resolve feedback to candidates** (`resolve_feedback`): match each `HotelFeedback` to a
+   re-discovered candidate by `Pick.id` (`"{source}:{id}"`) first, then by normalized name (the
+   `find_anchor` matcher, so a fuzzy name still lands). A feedback item that matches no current
+   candidate is not dropped: its echoed `attributes` still feed the attribute bias below.
+2. **Exclude the already-seen** (`exclusion_ids`): drop the union of resolved `wanted`, `unwanted`,
+   and `exclude` ids from the candidates, so refine returns **new** options rather than the same
+   list re-ranked (a rejected hotel never comes back; a liked one is the seed for peers, not a
+   repeat). Stateless by construction: the exclusion set is rebuilt from the request each call, not
+   remembered.
+3. **Derive a wanted envelope** (`refine_envelope`) from the resolved `wanted` hotels: a price
+   window spanning their prices (widened by `refine_price_low_factor` / `refine_price_high_factor`),
+   a star / guest-rating floor near the group's minimum (`refine_star_tolerance` /
+   `refine_rating_tolerance`), the amenities they **all** share as must-haves, and a re-centre on the
+   wanted **centroid** (`refine_radius_km`). Like the anchor envelope it only ever **tightens** the
+   request's own `Filters` (stricter bound wins) and feeds the widening step, so a too-narrow
+   envelope still recovers candidates rather than returning nothing. Empty `wanted` yields an empty
+   envelope (no tightening, no re-centre).
+4. **Preference bias after scoring** (`apply_preference`): a bounded nudge to each hotel's overall
+   score, `+` for similarity to the `wanted` attribute profile and `−` for similarity to the
+   `unwanted` one (shared area, price band, star tier, amenities, property type), capped at
+   `refine_bias_weight` and re-clamped to `[0, 1]`, surfaced as `why["preference"]`. Applied to
+   **whatever scorer ran** (heuristic or LLM), so the bias is deterministic and testable on the
+   offline path. The LLM scorer additionally receives the wanted/unwanted profiles and any
+   `reason` text as prompt context (see `scoring.md`), so live rationales stay coherent.
+
+`diagnostics.refined = True` and `diagnostics.round` echoes `request.round`. Everything downstream
+(lenses, offers, budget fallback, status) is the zone path unchanged. Degenerate cases never crash
+(`contract.md` → Error philosophy): no usable feedback degrades to a plain re-search of `base`.
+
 ## Shortlist (`stages/shortlist.py`)
 
 Cheap score = `rating/10` + review-confidence (`min(reviews/500, 1) * 0.2`) − distance penalty
@@ -111,7 +151,9 @@ Pure functions over `list[ScoredHotel]` (`LensName` members in `contract.md`):
 
 ## Explain (`stages/explain.py`)
 
-`to_pick` builds the **flat** `Pick` (see `contract.md` → Pick): it carries `score` and `rationale`,
+`to_pick` builds the **flat** `Pick` (see `contract.md` → Pick): it sets the stable
+`id = f"{hotel.source}:{hotel.id}"` (the search→refine identity, see `contract.md` → Refinement),
+carries `score` and `rationale`,
 maps the scorer's `subscores → why`, **surfaces** `name` / `area` / `price_per_night` / `currency` /
 `rating` / `review_count` / `star_rating` / `description` / `amenities` / `url` / `image_url` up from
 the hotel, sets `coordinates = hotel.location`, computes `distance_to_desired_km` (`haversine` to

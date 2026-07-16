@@ -1,9 +1,10 @@
 # Request / response contract (`contracts.py`)
 
 The stable typed surface this repo exposes **as a git submodule** to an orchestrator agent
-("tripper"): `HotelSearchRequest` in, `HotelSearchResponse` out, via one entry point. Built on the
-domain types in `domain-model.md`. The agent is stateless (see `architecture.md`), so this contract
-is the entire interface.
+("tripper"): `HotelSearchRequest` in, `HotelSearchResponse` out, via `search()`, with a `refine()`
+companion for the feedback loop (see Refinement below). Built on the domain types in
+`domain-model.md`. The agent is stateless (see `architecture.md`), so this contract is the entire
+interface.
 
 The response here is the **agent payload**. The orchestrator wraps it in its own **transport
 envelope** (`{status: ok|error, error, hotel: <payload>}`) — that wrapper is orchestrator-owned and
@@ -13,10 +14,12 @@ transport `status = ok`.
 
 ## The submodule API surface
 
-- **Entry points:** `async def search(request: HotelSearchRequest, settings=None) ->
-  HotelSearchResponse`, plus a thin sync wrapper `search_sync(request, settings=None)` for
-  non-async callers. Both re-exported at the package top level
-  (`from hotel_finder import search, search_sync, HotelSearchRequest, HotelSearchResponse`).
+- **Entry points (two):** `async def search(request: HotelSearchRequest, settings=None) ->
+  HotelSearchResponse` for the initial query, and `async def refine(request: HotelRefineRequest,
+  settings=None) -> HotelSearchResponse` for the feedback loop (see Refinement below). Each has a
+  thin sync wrapper (`search_sync`, `refine_sync`) for non-async callers. All re-exported at the
+  package top level (`from hotel_finder import search, search_sync, refine, refine_sync,
+  HotelSearchRequest, HotelRefineRequest, HotelFeedback, HotelSearchResponse`).
 - **Config is injected or read from env.** `settings=None` reads env / `.env`; the orchestrator may
   instead pass a `Settings`. **No `.env` is required when the library is imported** (see
   `config.md`).
@@ -141,6 +144,12 @@ One recommended hotel within a lens. **Flat** (no nested `hotel`): the fields th
 to render and reason are promoted to the top level, and internal-only fields (`raw`, full `sources`)
 are not on the wire.
 
+- `id: str` — **stable identity** for this hotel within a trip (`"{source}:{provider_id}"`, e.g.
+  `"liteapi:lp1a2b3"`): globally unique, opaque to the orchestrator, and stable across the
+  search→refine round-trip (the same hotel re-discovers with the same id, because both providers
+  derive `Hotel.id` from a stable provider/fixture id). The orchestrator stores it and echoes it
+  back (in `HotelFeedback.id` and `refine`'s `exclude`) to point at what the user liked or disliked.
+  See Refinement below.
 - `name: str`
 - `score: float` (**0..1, normalized, comparable across lenses** — see below)
 - `rationale: str` — human-readable "why this hotel"
@@ -200,11 +209,68 @@ hotels wholesale:
 ### `Diagnostics`
 
 `providers_used`, `candidates_found`, `candidates_after_filter`, `shortlisted`, `scorer`,
-`widened`. (Renamed from `RecommendationMeta` / the `meta` field.)
+`widened`, plus (on a `refine()` response) `refined: bool` and `round: int`. (Renamed from
+`RecommendationMeta` / the `meta` field.)
 
 Note: `scorer` reports the scorer that **actually ran**. If the LLM scorer falls back to heuristic
 (no credentials, endpoint unreachable, bad output), `scorer` reads `heuristic` and a `warning`
 records the fallback (see `scoring.md`, Batch M1e in `specflow/history/BUILD_QUEUE_DONE.md`).
+
+## Refinement (`refine()` / `refine_sync()`): the feedback loop
+
+The orchestrator's **second** call. After `search()` returns picks and the user marks some as
+wanted or unwanted, the orchestrator calls `refine()` and gets a **new** `HotelSearchResponse`
+that fits those signals, mapped by the exact same code (same return type as `search()`). This
+mirrors the sibling activities agent's two-call design (search, then refine).
+
+The agent stays **stateless** (`architecture.md`): `refine()` re-runs discovery from the original
+trip context and applies the feedback, holding **no** memory between calls. Nothing is hoarded
+across calls (it is a library inside a cloud function; a stored candidate set would leak until the
+function is torn down). The identity round-trip works because `Pick.id` is stable (above): the
+orchestrator echoes back the ids it was given, and `refine()` re-discovers the same hotels under
+the same ids. The mechanics (exclusion, the wanted envelope, re-centring, the preference bias) are
+in `pipeline.md` → Refine; the knobs are in `config.md` → Refine knobs.
+
+### `HotelRefineRequest` (the refine request)
+
+`extra="forbid"` (fail fast on an orchestrator typo, like `HotelSearchRequest`).
+
+- `base: HotelSearchRequest` — the original trip context (place, stay, guests, filters, lenses,
+  picks_per_lens, guest_nationality). Validated as its own model, so a malformed base raises
+  `ValidationError` at construction, exactly as for `search()`.
+- `wanted: list[HotelFeedback] = []` — hotels the user liked. Refine biases **toward** their shared
+  attributes and surfaces **new** options like them (more that fit the bill, not the same list
+  re-ranked), so the wanted hotels themselves are not returned again.
+- `unwanted: list[HotelFeedback] = []` — hotels the user rejected. Excluded from the results, and
+  their shared attributes are biased **against**.
+- `exclude: list[str] = []` — `Pick.id`s already shown; not repeated (refine returns new options).
+- `round: int = Field(default=1, ge=1)` — the refinement round, echoed into `diagnostics.round` for
+  telemetry.
+
+`wanted` and `unwanted` are independent: only `unwanted` is "not these"; only `wanted` is "more like
+these"; all empty degrades to a plain re-search of `base`. Same invariants as `search()`: it never
+raises on a data outcome (warnings + `agent_status`), imports keyless (mock provider + heuristic),
+and is import-safe.
+
+### `HotelFeedback` (a reduced, forgiving signal)
+
+A trimmed echo of a prior `Pick`, deliberately easy for the caller to build (`extra="ignore"`, so a
+caller that sends extra keys is not rejected).
+
+- `id: str | None = None` — the `Pick.id` from a prior response, the **preferred identity**. `None`
+  falls back to `name`.
+- `name: str = ""` — the pick's name: the identity fallback when `id` is absent, and a useful signal
+  for the LLM scorer.
+- `attributes: HotelFeedbackAttributes | None = None` — optional echo of the pick's fields
+  (`price_per_night`, `area`, `star_rating`, `amenities`, `property_type`), used for the attribute
+  bias when the hotel is no longer in the freshly discovered set. `extra="ignore"`.
+- `reason: str | None = None` — optional free text ("too far from the centre", "love the rooftop
+  pool"), passed to the LLM scorer as context.
+
+Identity resolves by `id` first (matched against the re-discovered candidates), then a
+normalized-name match (the same matcher as `intent=anchor`, see `pipeline.md` → Anchor intent). A
+feedback item that resolves to no current candidate still contributes its `attributes` to the bias
+(see `pipeline.md` → Refine).
 
 ## Status vs the current code
 
@@ -214,4 +280,9 @@ described above: flat `Pick` (no nested `hotel`), trip-level `guests` + `guest_n
 populated the last two fields: `Pick.image_url` (from the LiteAPI adapter's `main_photo`/`thumbnail`;
 `None` for the mock and photo-less hotels) and `Pick.distance_to_desired_km` (haversine from the
 hotel to the resolved search `center`; `None` when the center or the hotel's coordinates are
-missing). No known divergence remains.
+missing).
+
+**Ahead of the code (refinement batch):** the Refinement surface above (`refine` / `refine_sync`,
+`HotelRefineRequest`, `HotelFeedback`, `Pick.id`, `Diagnostics.refined` / `round`) is the design for
+the in-flight feedback-loop batch (`BUILD_QUEUE.md`); it lands with that batch. Everything else
+matches the code.

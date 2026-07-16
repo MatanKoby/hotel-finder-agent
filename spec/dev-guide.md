@@ -61,8 +61,10 @@ deps: `pytest`, `pytest-asyncio`, `ruff`, `mypy` (all in `pyproject.toml`).
 - **pytest** `asyncio_mode=auto` (async tests need no decorator). 90 tests, fully offline: the unit
   suite plus the `tests/eval/` scenarios; the LLM path uses a stubbed client.
 - `Makefile` targets: `install / lint / format / typecheck / test / check / run`.
-- Public entry re-exported: `from hotel_finder import search` (plus `HotelSearchRequest` /
-  `HotelSearchResponse`).
+- Public entries re-exported: `from hotel_finder import search, refine` (plus their `_sync`
+  wrappers, `HotelSearchRequest` / `HotelRefineRequest` / `HotelFeedback` / `HotelSearchResponse`).
+  Two stable entry points now: `search()` (initial query) and `refine()` (feedback loop, see
+  `contract.md` → Refinement).
 
 ## How to extend
 

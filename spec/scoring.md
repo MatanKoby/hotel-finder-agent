@@ -67,5 +67,17 @@ when `review_count` is high or unknown.
 Both back the same `HotelScorer` interface, so the pipeline is unchanged. Endpoints, keys, models,
 and timeouts are all in `config.md`.
 
+## Preference bias (refine)
+
+The `refine()` feedback loop (see `pipeline.md` → Refine) applies a **preference bias** on top of
+whichever scorer ran, so it works on the deterministic heuristic path too. After scoring,
+`apply_preference` nudges each hotel's overall score up for similarity to the `wanted` attribute
+profile and down for the `unwanted` one (shared area, price band, star tier, amenities, property
+type), capped at `refine_bias_weight` (`config.md`) and re-clamped to `[0, 1]`, and records the
+signed nudge as `why["preference"]`. The `overall_score` weighting itself is untouched. The
+`LLMScorer` additionally gets the wanted/unwanted profiles and any feedback `reason` text as extra
+prompt context, so a live rationale can reference what the user liked; the deterministic nudge still
+runs on the returned scores.
+
 The starting weightings and thresholds here are reasonable defaults, not tuned; revisiting them
 is tracked in `roadmap.md`.
