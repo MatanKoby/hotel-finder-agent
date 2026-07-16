@@ -141,6 +141,49 @@ class HotelSearchRequest(BaseModel):
         return self
 
 
+# --- refinement (feedback loop) --------------------------------------------------------------
+
+
+class HotelFeedbackAttributes(BaseModel):
+    """Optional echo of a prior ``Pick``'s fields, used to bias the refine result when the hotel is
+    no longer in the freshly discovered candidate set. Forgiving (``extra="ignore"``) so a caller
+    can send more without being rejected."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    price_per_night: float | None = Field(default=None, ge=0.0)
+    area: str | None = None
+    star_rating: int | None = Field(default=None, ge=1, le=5)
+    amenities: set[Amenity] = Field(default_factory=set)
+    property_type: str | None = None
+
+
+class HotelFeedback(BaseModel):
+    """One wanted/unwanted signal: a reduced echo of a prior ``Pick`` (see ``contract.md`` →
+    Refinement). Forgiving (``extra="ignore"``) so it is easy for the caller to build."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str | None = None  # a prior Pick.id, the preferred identity; None falls back to name
+    name: str = ""  # identity fallback, and a useful signal for the LLM scorer
+    attributes: HotelFeedbackAttributes | None = None
+    reason: str | None = None  # optional free text, passed to the LLM scorer as context
+
+
+class HotelRefineRequest(BaseModel):
+    """A refinement (feedback-loop) request: the original trip ``base`` plus the user's wanted /
+    unwanted marks on a prior response. ``refine()`` returns the same ``HotelSearchResponse`` as
+    ``search`` (see ``contract.md`` → Refinement). ``extra="forbid"`` fails fast on a typo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base: HotelSearchRequest  # the original trip context; validated as its own model
+    wanted: list[HotelFeedback] = Field(default_factory=list)  # bias toward; surface new like these
+    unwanted: list[HotelFeedback] = Field(default_factory=list)  # excluded + biased against
+    exclude: list[str] = Field(default_factory=list)  # Pick.ids already shown; not repeated
+    round: int = Field(default=1, ge=1)  # refinement round, echoed into diagnostics.round
+
+
 # --- response --------------------------------------------------------------------------------
 
 
@@ -181,6 +224,7 @@ class Pick(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    id: str  # stable "{source}:{provider_id}"; the search->refine identity (see contract.md)
     name: str
     score: float = Field(ge=0.0, le=1.0)  # overall, normalized, comparable across lenses
     rationale: str = ""
@@ -211,6 +255,8 @@ class Diagnostics(BaseModel):
     shortlisted: int = 0
     scorer: str = "heuristic"  # the scorer that actually ran (see scoring.md)
     widened: bool = False
+    refined: bool = False  # True on a refine() response
+    round: int = 1  # echoes HotelRefineRequest.round on a refine() response
 
 
 class HotelSearchResponse(BaseModel):

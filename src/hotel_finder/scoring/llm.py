@@ -23,7 +23,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from hotel_finder.config import Settings
-from hotel_finder.context import SearchContext
+from hotel_finder.context import Preference, PreferenceItem, SearchContext
 from hotel_finder.models import GeoPoint, Hotel
 from hotel_finder.scoring.base import HotelScorer, ScoredHotel, ScoreReport, overall_score
 from hotel_finder.scoring.heuristic import HeuristicScorer
@@ -50,6 +50,13 @@ _SYSTEM_PROMPT = (
     '"character": num, "gem_signal": num, "rationale": str}]}. '
     "rationale is one short sentence consistent with the scores. "
     "Include every hotel id exactly once."
+)
+
+# Appended to the system prompt only on a refine() call that carries feedback (see scoring.md).
+_PREFERENCE_NOTE = (
+    "\nThe user already reviewed some hotels (given in `preferences`): raise value/character for "
+    "hotels similar to `preferred` and lower them for hotels similar to `rejected`, using each "
+    "`reason` note as guidance. Never recommend a rejected hotel."
 )
 
 Message = dict[str, str]
@@ -188,6 +195,28 @@ def _hotel_payload(
     }
 
 
+def _pref_item(item: PreferenceItem) -> dict[str, object]:
+    return {
+        "name": item.name or None,
+        "area": item.area,
+        "price_per_night": item.price_per_night,
+        "star_rating": item.star_rating,
+        "amenities": sorted(a.value for a in item.amenities),
+        "property_type": item.property_type,
+        "reason": item.reason,
+    }
+
+
+def _preference_payload(preference: Preference | None) -> dict[str, object] | None:
+    """The wanted/unwanted profiles for the prompt, or ``None`` when there is no feedback."""
+    if preference is None or preference.is_empty():
+        return None
+    return {
+        "preferred": [_pref_item(i) for i in preference.wanted],
+        "rejected": [_pref_item(i) for i in preference.unwanted],
+    }
+
+
 def _parse(content: str) -> list[_LLMItem]:
     return _LLMResponse.model_validate(json.loads(content)).scores
 
@@ -242,7 +271,7 @@ class LLMScorer:
         self, hotels: list[Hotel], context: SearchContext
     ) -> list[_LLMItem]:
         assert self._backend is not None
-        payload = {
+        payload: dict[str, object] = {
             "query": {
                 "location": context.location_label,
                 "desired_area": context.desired_area,
@@ -254,8 +283,13 @@ class LLMScorer:
                 _hotel_payload(h, context.center, context.desired_area) for h in hotels
             ],
         }
+        system_prompt = _SYSTEM_PROMPT
+        preferences = _preference_payload(context.preference)
+        if preferences is not None:
+            payload["preferences"] = preferences  # refine(): liked/rejected hotels for the model
+            system_prompt = _SYSTEM_PROMPT + _PREFERENCE_NOTE
         messages: list[Message] = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(payload)},
         ]
 

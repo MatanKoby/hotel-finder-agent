@@ -10,6 +10,9 @@ from hotel_finder.config import Settings
 from hotel_finder.contracts import (
     Diagnostics,
     Filters,
+    HotelFeedback,
+    HotelFeedbackAttributes,
+    HotelRefineRequest,
     HotelSearchRequest,
     HotelSearchResponse,
     Intent,
@@ -22,7 +25,7 @@ from hotel_finder.contracts import (
     Stay,
 )
 from hotel_finder.models import Amenity, GeoPoint, Hotel, PriceBand
-from hotel_finder.pipeline import search, search_sync
+from hotel_finder.pipeline import refine, refine_sync, search, search_sync
 
 __version__ = "0.1.0"
 __all__ = [
@@ -31,6 +34,9 @@ __all__ = [
     "Filters",
     "GeoPoint",
     "Hotel",
+    "HotelFeedback",
+    "HotelFeedbackAttributes",
+    "HotelRefineRequest",
     "HotelSearchRequest",
     "HotelSearchResponse",
     "Intent",
@@ -43,6 +49,8 @@ __all__ = [
     "ResolvedQuery",
     "Settings",
     "Stay",
+    "refine",
+    "refine_sync",
     "search",
     "search_sync",
 ]

@@ -15,9 +15,10 @@ from collections import Counter
 from typing import Literal
 
 from hotel_finder.config import Settings
-from hotel_finder.context import SearchContext
+from hotel_finder.context import Preference, SearchContext
 from hotel_finder.contracts import (
     Diagnostics,
+    HotelRefineRequest,
     HotelSearchRequest,
     HotelSearchResponse,
     Intent,
@@ -36,6 +37,7 @@ from hotel_finder.stages.anchor import anchor_envelope, find_anchor
 from hotel_finder.stages.dedupe import dedupe
 from hotel_finder.stages.explain import to_picks
 from hotel_finder.stages.filtering import FilterCriteria, hard_filter
+from hotel_finder.stages.refine import apply_preference, pick_id, plan_refine
 from hotel_finder.stages.shortlist import shortlist
 from hotel_finder.utils.geocode import make_geocoder
 
@@ -50,12 +52,7 @@ async def search(
     warnings: list[str] = []
 
     resolved, request, filter_center = await _resolve(request, settings, warnings)
-
-    providers = get_providers(settings.enabled_providers, settings)
-    candidates = await _gather(providers, request, warnings)
-    candidates = dedupe(candidates)
-    candidates_found = len(candidates)
-    candidates = [_with_price_band(h, settings) for h in candidates]
+    providers, candidates, candidates_found = await _discover(request, settings, warnings)
 
     # The hard-filter base is the request's own filters; ANCHOR intent tightens it to the peers of
     # a named hotel (and re-centres ranking on it). Both feed the same widening + scoring path.
@@ -65,11 +62,113 @@ async def search(
             request, candidates, base, resolved, settings, warnings
         )
 
+    return await _assemble(
+        request=request,
+        providers=providers,
+        candidates=candidates,
+        candidates_found=candidates_found,
+        base=base,
+        resolved=resolved,
+        settings=settings,
+        warnings=warnings,
+    )
+
+
+def search_sync(
+    request: HotelSearchRequest, settings: Settings | None = None
+) -> HotelSearchResponse:
+    """Blocking convenience wrapper around :func:`search` for non-async callers.
+
+    Not usable from inside a running event loop (use ``await search(...)`` there).
+    """
+    return asyncio.run(search(request, settings))
+
+
+async def refine(
+    request: HotelRefineRequest, settings: Settings | None = None
+) -> HotelSearchResponse:
+    """Run the feedback loop for ``request`` and return a ``HotelSearchResponse`` envelope.
+
+    The agent is stateless: this re-discovers the candidate set from ``request.base`` (the original
+    trip), then applies the wanted/unwanted feedback (see ``stages/refine.py``) before the same
+    filter/score/lenses path as :func:`search` — exclude the already-seen picks, tighten to the
+    wanted envelope, re-centre on the wanted hotels, and bias scoring toward wanted / away from
+    unwanted. Degenerate feedback degrades to a plain re-search of ``base``; it never raises on a
+    data outcome (see ``contract.md`` → Error philosophy).
+    """
+    settings = settings or Settings()
+    warnings: list[str] = []
+
+    resolved, base_request, filter_center = await _resolve(request.base, settings, warnings)
+    providers, candidates, candidates_found = await _discover(base_request, settings, warnings)
+    base = _base_criteria(base_request, filter_center, settings)
+
+    plan = plan_refine(candidates, request, settings)
+    candidates = [h for h in candidates if pick_id(h) not in plan.exclude_ids]
+    base = plan.envelope.to_criteria(base)
+    if plan.envelope.center is not None:
+        resolved = resolved.model_copy(update={"center": plan.envelope.center})
+
+    return await _assemble(
+        request=base_request,
+        providers=providers,
+        candidates=candidates,
+        candidates_found=candidates_found,
+        base=base,
+        resolved=resolved,
+        settings=settings,
+        warnings=warnings,
+        preference=plan.preference,
+        refined=True,
+        refine_round=request.round,
+    )
+
+
+def refine_sync(
+    request: HotelRefineRequest, settings: Settings | None = None
+) -> HotelSearchResponse:
+    """Blocking convenience wrapper around :func:`refine` for non-async callers.
+
+    Not usable from inside a running event loop (use ``await refine(...)`` there).
+    """
+    return asyncio.run(refine(request, settings))
+
+
+async def _discover(
+    request: HotelSearchRequest, settings: Settings, warnings: list[str]
+) -> tuple[list[HotelProvider], list[Hotel], int]:
+    """Gather → dedupe → backfill price bands. Returns the providers, candidates, and the
+    pre-filter candidate count (``diagnostics.candidates_found``)."""
+    providers = get_providers(settings.enabled_providers, settings)
+    candidates = await _gather(providers, request, warnings)
+    candidates = dedupe(candidates)
+    candidates_found = len(candidates)
+    candidates = [_with_price_band(h, settings) for h in candidates]
+    return providers, candidates, candidates_found
+
+
+async def _assemble(
+    *,
+    request: HotelSearchRequest,
+    providers: list[HotelProvider],
+    candidates: list[Hotel],
+    candidates_found: int,
+    base: FilterCriteria,
+    resolved: ResolvedQuery,
+    settings: Settings,
+    warnings: list[str],
+    preference: Preference | None = None,
+    refined: bool = False,
+    refine_round: int = 1,
+) -> HotelSearchResponse:
+    """The shared tail both entry points run: filter + widen → shortlist → score (→ refine
+    preference bias) → offers → lenses → budget fallback → diagnostics → response."""
     context = SearchContext(
-        center=resolved.center,  # the desired point: explicit centre, geocoded area, or the anchor
+        center=resolved.center,  # the desired point: explicit centre, geocoded area, anchor, wanted
         desired_area=request.place.desired_area,
         location_label=resolved.city or request.place.text,
         filters=request.filters,
+        preference=preference,  # only set on refine(); feeds the LLM prompt
     )
 
     filtered, widened = _filter_with_widening(candidates, base, settings)
@@ -78,6 +177,8 @@ async def search(
     scorer = make_scorer(settings)
     scored = await scorer.score(short, context)
     warnings.extend(scorer.report.warnings)  # e.g. an LLM -> heuristic fallback
+    if preference is not None:
+        scored = apply_preference(scored, preference, settings)  # soft wanted/unwanted nudge
 
     offers_by_id = {s.hotel.id: _offers_for(s.hotel, request) for s in scored}
     lenses_out = _build_lenses(scored, request, offers_by_id, resolved.center)
@@ -90,6 +191,8 @@ async def search(
         shortlisted=len(short),
         scorer=scorer.report.scorer,  # the scorer that actually ran (heuristic on fallback)
         widened=widened,
+        refined=refined,
+        round=refine_round,
     )
     return HotelSearchResponse(
         request_id=request.request_id,
@@ -99,16 +202,6 @@ async def search(
         lenses=lenses_out,
         diagnostics=diagnostics,
     )
-
-
-def search_sync(
-    request: HotelSearchRequest, settings: Settings | None = None
-) -> HotelSearchResponse:
-    """Blocking convenience wrapper around :func:`search` for non-async callers.
-
-    Not usable from inside a running event loop (use ``await search(...)`` there).
-    """
-    return asyncio.run(search(request, settings))
 
 
 async def _resolve(

@@ -46,6 +46,7 @@ def to_pick(
         else None
     )
     return Pick(
+        id=f"{hotel.source}:{hotel.id}",  # stable search->refine identity (contract.md)
         name=hotel.name,
         score=scored.score,
         rationale=_lens_rationale(scored, lens),

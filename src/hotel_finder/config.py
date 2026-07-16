@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     anchor_star_tolerance: int = 1  # peers may be up to this many stars below the anchor's class
     anchor_rating_tolerance: float = 1.0  # peers may be this far below the anchor's guest score
 
+    # --- REFINE (feedback loop; see pipeline.md → Refine) ---
+    refine_radius_km: float = 3.0  # re-centre radius around the wanted centroid
+    refine_price_low_factor: float = 0.7  # wanted price floor = min wanted price * this
+    refine_price_high_factor: float = 1.4  # wanted price ceiling = max wanted price * this
+    refine_star_tolerance: int = 1  # new options may be this many stars below the wanted floor
+    refine_rating_tolerance: float = 1.0  # this far below the wanted guest-score floor
+    refine_bias_weight: float = 0.15  # cap on the wanted/unwanted preference nudge to the score
+
     # --- price-band cutoffs (per-night, in the dominant currency; v1 mock uses EUR) ---
     band_budget_max: float = 90.0
     band_midrange_max: float = 180.0
