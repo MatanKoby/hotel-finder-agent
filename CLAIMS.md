@@ -19,6 +19,10 @@ Entry format:
 
 <!-- One entry per actively claimed batch. -->
 
+### Batch P7 — Refinement entry point (feedback loop)
+- Owner: claude
+- Started: 2026-07-16 15:43
+
 ## Completed
 
 ### Batch P3 — ANCHOR intent (peers of a named hotel)
